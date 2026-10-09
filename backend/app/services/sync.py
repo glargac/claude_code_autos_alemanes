@@ -1,4 +1,5 @@
 """Orquestación: scraping -> dedupe (upsert) -> scoring -> comprobación de vigencia."""
+import asyncio
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -8,17 +9,21 @@ from ..models import Car
 from ..scrapers.base import Scraper
 from ..scrapers.kleinanzeigen import KleinanzeigenScraper
 from ..scrapers.mobile_de import MobileDeScraper
-from .llm import analyze_profitability
+from .llm import analyze_prompt, build_prompt, enabled as llm_enabled
 from .scoring import compute_score
 from .settings_store import get_setting, save_setting
 
 SCRAPERS: list[Scraper] = [MobileDeScraper(), KleinanzeigenScraper()]
 
 
-def rescore(car: Car, weights: dict, search: dict) -> None:
-    llm_score, analyse = analyze_profitability(car)
-    if analyse:
-        car.llm_analyse = analyse
+async def rescore(car: Car, weights: dict, search: dict) -> None:
+    """Recalcula el score. El LLM solo se consulta si el coche aún no tiene análisis (coste: una
+    llamada por coche, una sola vez); en el resto se reutiliza la nota guardada."""
+    llm_score = (car.score_detail or {}).get("llm_rentabilidad")
+    if llm_enabled() and (car.llm_analyse is None or llm_score is None):
+        score, analyse = await asyncio.to_thread(analyze_prompt, build_prompt(car))
+        if analyse:
+            car.llm_analyse, llm_score = analyse, score
     car.score, car.score_detail = compute_score(car, weights, search, llm_score)
 
 
@@ -43,7 +48,7 @@ async def run_sync(db: Session, progress=None) -> dict:
                 car = Car(**data, erstmals_gesehen=now, zuletzt_gesehen=now)
                 db.add(car)
                 nuevos += 1
-            rescore(car, weights, search)
+            await rescore(car, weights, search)
 
         # Vigencia: activos de esta fuente que no aparecieron -> verificar individualmente.
         missing = [
@@ -106,8 +111,6 @@ async def _run_in_background() -> None:
 
 def start_sync() -> bool:
     """Lanza la sync si no hay otra en curso. Devuelve False si ya estaba corriendo."""
-    import asyncio
-
     if sync_state["running"]:
         return False
     sync_state.update(running=True, started_at=_utc_now(), result=None, error=None, progress=None)

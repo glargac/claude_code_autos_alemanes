@@ -31,6 +31,7 @@ No pegues comentarios `#` al final de un comando en zsh interactivo: se pasan co
 **Sync y scoring:**
 - `POST /api/sync` responde 202 y corre en segundo plano; el estado vive en memoria (`sync_state`) y la hora de la última sync en la tabla `settings` (`sync_meta`). Todo se guarda al final: si falla a mitad, no queda nada.
 - Al guardar ajustes de búsqueda o pesos se recalculan todos los scores sin llamar al LLM (`rescore_all`), reutilizando la nota LLM guardada.
+- El LLM se consulta una sola vez por coche (solo si no tiene análisis guardado) y en un hilo aparte, para no bloquear el backend. Si la llamada falla, el coche queda sin análisis y se reintenta en la siguiente sync; el fallo no aborta la sync.
 - Los pesos se normalizan. Sin `ANTHROPIC_API_KEY` no hay nota LLM y su peso se reparte entre los componentes deterministas.
 - `ScrapedCar` usa `None` para "sin datos": el upsert ignora `None` y `""` para no pisar datos ya enriquecidos.
 
