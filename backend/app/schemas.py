@@ -68,6 +68,7 @@ class WeightsSettings(BaseModel):
     klimaanlage: float = Field(ge=0, le=1)
     tuev: float = Field(ge=0, le=1)
     cabrio_saison: float = Field(ge=0, le=1)
+    precio: float = Field(ge=0, le=1)
     llm_rentabilidad: float = Field(ge=0, le=1)
     umbral_verde: float = Field(ge=0, le=10)
     umbral_amarillo: float = Field(ge=0, le=10)
@@ -76,7 +77,7 @@ class WeightsSettings(BaseModel):
     def thresholds_ordered(self):
         if self.umbral_amarillo >= self.umbral_verde:
             raise ValueError("umbral_amarillo debe ser menor que umbral_verde")
-        if self.kilometer + self.klimaanlage + self.tuev + self.cabrio_saison + self.llm_rentabilidad <= 0:
+        if self.kilometer + self.klimaanlage + self.tuev + self.cabrio_saison + self.precio + self.llm_rentabilidad <= 0:
             raise ValueError("al menos un peso debe ser mayor que 0")
         return self
 

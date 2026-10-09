@@ -29,6 +29,7 @@ const DETAIL_LABELS = {
   klimaanlage: "Klima",
   tuev: "TÜV",
   cabrio_saison: "Cabrio",
+  precio: "Precio",
   llm_rentabilidad: "Rentabilidad",
 };
 

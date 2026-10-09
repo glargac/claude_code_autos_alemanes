@@ -37,11 +37,12 @@ DEFAULT_APP = {
 
 # Pesos del scoring (editables desde la UI). Los pesos deterministas + LLM suman 1.0.
 DEFAULT_WEIGHTS = {
-    "kilometer": 0.25,
-    "klimaanlage": 0.15,
-    "tuev": 0.15,
+    "kilometer": 0.20,
+    "klimaanlage": 0.10,
+    "tuev": 0.10,
     "cabrio_saison": 0.05,
-    "llm_rentabilidad": 0.40,
+    "precio": 0.20,
+    "llm_rentabilidad": 0.35,
     "umbral_verde": 8.0,
     "umbral_amarillo": 5.0,
 }

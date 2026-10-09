@@ -10,13 +10,13 @@ from ..scrapers.base import Scraper
 from ..scrapers.kleinanzeigen import KleinanzeigenScraper
 from ..scrapers.autoscout24 import AutoScout24Scraper
 from .llm import analyze_prompt, build_prompt, enabled as llm_enabled
-from .scoring import compute_score
+from .scoring import MarketIndex, compute_score
 from .settings_store import get_setting, save_setting
 
 SCRAPERS: list[Scraper] = [KleinanzeigenScraper(), AutoScout24Scraper()]
 
 
-async def rescore(car: Car, weights: dict, search: dict) -> None:
+async def rescore(car: Car, weights: dict, search: dict, market: MarketIndex) -> None:
     """Recalcula el score. El LLM solo se consulta si el coche aún no tiene análisis (coste: una
     llamada por coche, una sola vez); en el resto se reutiliza la nota guardada."""
     llm_score = (car.score_detail or {}).get("llm_rentabilidad")
@@ -24,7 +24,7 @@ async def rescore(car: Car, weights: dict, search: dict) -> None:
         score, analyse = await asyncio.to_thread(analyze_prompt, build_prompt(car))
         if analyse:
             car.llm_analyse, llm_score = analyse, score
-    car.score, car.score_detail = compute_score(car, weights, search, llm_score)
+    car.score, car.score_detail = compute_score(car, weights, search, llm_score, market)
 
 
 async def run_sync(db: Session, progress=None) -> dict:
@@ -33,6 +33,7 @@ async def run_sync(db: Session, progress=None) -> dict:
     search, weights = get_setting(db, "search"), get_setting(db, "weights")
     now = datetime.utcnow()
     wanted_fuels = {f.casefold() for f in search["kraftstoffart"]}
+    market = MarketIndex(db.scalars(select(Car).where(Car.aktiv.is_(True))))
     nuevos = actualizados = inactivos = 0
     fehler: list[str] = []
 
@@ -59,7 +60,7 @@ async def run_sync(db: Session, progress=None) -> dict:
                     car = Car(**data, erstmals_gesehen=now, zuletzt_gesehen=now)
                     db.add(car)
                     nuevos += 1
-                await rescore(car, weights, search)
+                await rescore(car, weights, search, market)
 
             # Vigencia: activos de esta fuente que no aparecieron -> verificar individualmente.
             missing = [
@@ -72,6 +73,7 @@ async def run_sync(db: Session, progress=None) -> dict:
                     car.aktiv = False
                     inactivos += 1
             db.commit()
+            rescore_all(db)  # con los coches nuevos ya guardados, el precio de todos se compara con un mercado mayor
         except Exception as exc:
             db.rollback()
             fehler.append(f"{scraper.name}: {type(exc).__name__}: {exc}")
@@ -83,9 +85,10 @@ def rescore_all(db: Session) -> int:
     """Recalcula scores con los pesos/rangos actuales reutilizando la nota LLM guardada (sin llamar al LLM)."""
     search, weights = get_setting(db, "search"), get_setting(db, "weights")
     cars = db.scalars(select(Car)).all()
+    market = MarketIndex(c for c in cars if c.aktiv)
     for car in cars:
         llm = (car.score_detail or {}).get("llm_rentabilidad")
-        car.score, car.score_detail = compute_score(car, weights, search, llm)
+        car.score, car.score_detail = compute_score(car, weights, search, llm, market)
     db.commit()
     return len(cars)
 

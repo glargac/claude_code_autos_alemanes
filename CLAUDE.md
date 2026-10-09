@@ -43,6 +43,7 @@ No pegues comentarios `#` al final de un comando en zsh interactivo: se pasan co
 - `POST /api/sync` responde 202 y corre en segundo plano; el estado vive en memoria (`sync_state`) y la hora de la última sync en la tabla `settings` (`sync_meta`). Se guarda al terminar cada fuente.
 - Al guardar ajustes de búsqueda o pesos se recalculan todos los scores sin llamar al LLM (`rescore_all`), reutilizando la nota LLM guardada.
 - El LLM se consulta una sola vez por coche (solo si no tiene análisis guardado) y en un hilo aparte, para no bloquear el backend. Si la llamada falla, el coche queda sin análisis y se reintenta en la siguiente sync; el fallo no aborta la sync.
+- El componente `precio` compara con coches comparables de la propia base (mismo modelo, año ±2, mínimo 5; mediana): 10 puntos si cuesta un 30 % menos, 5 si igual, 1 si un 30 % más. Sin comparables, o con modelo genérico ("Andere"), da 5 (neutro). Se calcula en `scoring.MarketIndex` y se recalcula en `rescore_all` tras cada fuente, porque mejora a medida que crece la base. Limitación conocida: no tiene en cuenta los km (un coche con pocos km cuesta más y se penaliza en precio).
 - Los pesos se normalizan. Sin `ANTHROPIC_API_KEY` no hay nota LLM y su peso se reparte entre los componentes deterministas.
 - `ScrapedCar` usa `None` para "sin datos": el upsert ignora `None` y `""` para no pisar datos ya enriquecidos.
 
