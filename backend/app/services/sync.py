@@ -8,12 +8,12 @@ from sqlalchemy.orm import Session
 from ..models import Car
 from ..scrapers.base import Scraper
 from ..scrapers.kleinanzeigen import KleinanzeigenScraper
-from ..scrapers.mobile_de import MobileDeScraper
+from ..scrapers.autoscout24 import AutoScout24Scraper
 from .llm import analyze_prompt, build_prompt, enabled as llm_enabled
 from .scoring import compute_score
 from .settings_store import get_setting, save_setting
 
-SCRAPERS: list[Scraper] = [MobileDeScraper(), KleinanzeigenScraper()]
+SCRAPERS: list[Scraper] = [KleinanzeigenScraper(), AutoScout24Scraper()]
 
 
 async def rescore(car: Car, weights: dict, search: dict) -> None:
@@ -28,41 +28,55 @@ async def rescore(car: Car, weights: dict, search: dict) -> None:
 
 
 async def run_sync(db: Session, progress=None) -> dict:
+    """Cada fuente se procesa y se guarda por separado: si una falla (bloqueo, cambio de web), las
+    demás siguen y lo ya guardado se conserva. Los fallos se devuelven en `fehler`."""
     search, weights = get_setting(db, "search"), get_setting(db, "weights")
     now = datetime.utcnow()
+    wanted_fuels = {f.casefold() for f in search["kraftstoffart"]}
     nuevos = actualizados = inactivos = 0
+    fehler: list[str] = []
 
-    for scraper in SCRAPERS:
-        seen: set[str] = set()
-        known = frozenset(db.scalars(select(Car.external_id).where(Car.source == scraper.name)))
-        for item in await scraper.search(search, known, progress):
-            seen.add(item.external_id)
-            car = db.scalar(select(Car).where(Car.source == item.source, Car.external_id == item.external_id))
-            data = {k: v for k, v in item.__dict__.items() if k != "extra" and v not in (None, "")}
-            if car:
-                for k, v in data.items():
-                    setattr(car, k, v)
-                car.aktiv, car.zuletzt_gesehen = True, now
-                actualizados += 1
-            else:
-                car = Car(**data, erstmals_gesehen=now, zuletzt_gesehen=now)
-                db.add(car)
-                nuevos += 1
-            await rescore(car, weights, search)
+    for i, scraper in enumerate(SCRAPERS):
+        def report(phase, done, total, _i=i, _name=scraper.name):
+            if progress:
+                progress(phase, done, total, _name, _i, len(SCRAPERS))
 
-        # Vigencia: activos de esta fuente que no aparecieron -> verificar individualmente.
-        missing = [
-            c for c in db.scalars(select(Car).where(Car.source == scraper.name, Car.aktiv.is_(True)))
-            if c.external_id not in seen
-        ]
-        gone = await scraper.inactive_urls([c.url for c in missing], progress)
-        for car in missing:
-            if car.url in gone:
-                car.aktiv = False
-                inactivos += 1
+        try:
+            seen: set[str] = set()
+            known = frozenset(db.scalars(select(Car.external_id).where(Car.source == scraper.name)))
+            for item in await scraper.search(search, known, report):
+                if item.kraftstoffart and item.kraftstoffart.casefold() not in wanted_fuels:
+                    continue  # p. ej. eléctricos o híbridos: fuera de alcance
+                seen.add(item.external_id)
+                car = db.scalar(select(Car).where(Car.source == item.source, Car.external_id == item.external_id))
+                data = {k: v for k, v in item.__dict__.items() if k != "extra" and v not in (None, "")}
+                if car:
+                    for k, v in data.items():
+                        setattr(car, k, v)
+                    car.aktiv, car.zuletzt_gesehen = True, now
+                    actualizados += 1
+                else:
+                    car = Car(**data, erstmals_gesehen=now, zuletzt_gesehen=now)
+                    db.add(car)
+                    nuevos += 1
+                await rescore(car, weights, search)
 
-    db.commit()
-    return {"nuevos": nuevos, "actualizados": actualizados, "inactivos": inactivos}
+            # Vigencia: activos de esta fuente que no aparecieron -> verificar individualmente.
+            missing = [
+                c for c in db.scalars(select(Car).where(Car.source == scraper.name, Car.aktiv.is_(True)))
+                if c.external_id not in seen
+            ]
+            gone = await scraper.inactive_urls([c.url for c in missing], report)
+            for car in missing:
+                if car.url in gone:
+                    car.aktiv = False
+                    inactivos += 1
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            fehler.append(f"{scraper.name}: {type(exc).__name__}: {exc}")
+
+    return {"nuevos": nuevos, "actualizados": actualizados, "inactivos": inactivos, "fehler": fehler}
 
 
 def rescore_all(db: Session) -> int:
@@ -83,10 +97,14 @@ sync_state: dict = {"running": False, "started_at": None, "result": None, "error
 _PHASES = {"listas": (0, 10), "detalles": (10, 70), "verificar": (80, 20)}
 
 
-def _progress(phase: str, done: int, total: int) -> None:
+def _progress(phase: str, done: int, total: int, source: str | None = None, idx: int = 0, n: int = 1) -> None:
     start, span = _PHASES[phase]
     frac = done / total if total else 1
-    sync_state["progress"] = {"phase": phase, "done": done, "total": total, "percent": round(start + span * frac)}
+    within = (start + span * frac) / 100  # 0..1 dentro de la fuente actual
+    sync_state["progress"] = {
+        "phase": phase, "done": done, "total": total, "source": source,
+        "percent": round((idx + within) / n * 100),
+    }
 
 
 def _utc_now() -> str:

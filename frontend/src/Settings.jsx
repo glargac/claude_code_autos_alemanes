@@ -98,7 +98,7 @@ export default function Settings({ onSaved, onRun, syncRunning }) {
 
   return (
     <div className="space-y-5">
-      <Card title="Búsqueda" hint="Se aplica en kleinanzeigen.de y, más adelante, mobile.de.">
+      <Card title="Búsqueda" hint="Se aplica en kleinanzeigen.de y AutoScout24.">
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Ort oder PLZ">
             <input className={input} value={search.ort_oder_plz} onChange={(e) => setS("ort_oder_plz", e.target.value)} />

@@ -21,7 +21,7 @@ class Car(Base):
     __table_args__ = (UniqueConstraint("source", "external_id", name="uq_source_external"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    source: Mapped[str] = mapped_column(String(20))  # mobile_de | kleinanzeigen
+    source: Mapped[str] = mapped_column(String(20))  # kleinanzeigen | autoscout24
     external_id: Mapped[str] = mapped_column(String(64))
     url: Mapped[str] = mapped_column(String(500))
     image_url: Mapped[str | None] = mapped_column(String(500))

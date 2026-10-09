@@ -8,6 +8,12 @@ const SCORE_COLORS = {
   gris: "bg-slate-500",
 };
 
+export const SOURCE_LABEL = { kleinanzeigen: "kleinanzeigen.de", autoscout24: "AutoScout24" };
+const SOURCE_STYLE = {
+  kleinanzeigen: "bg-emerald-950 text-emerald-300 ring-emerald-800",
+  autoscout24: "bg-amber-950 text-amber-300 ring-amber-800",
+};
+
 export const STATUSES = ["Neu", "Kontaktiert", "Termin vereinbart", "Kaufoption", "Abgelehnt"];
 
 const STATUS_STYLE = {
@@ -136,6 +142,9 @@ export default function CarCard({ car, onChange }) {
               {car.status}
               {car.status === "Termin vereinbart" && car.termin_am && ` · ${new Date(car.termin_am).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}`}
             </span>
+            <span className={`rounded px-1.5 py-0.5 text-[11px] ring-1 ${SOURCE_STYLE[car.source] ?? "ring-slate-700"}`}>
+              {SOURCE_LABEL[car.source] ?? car.source}
+            </span>
             {!car.aktiv && <span className="rounded-full bg-slate-600 px-2 py-0.5 text-xs">Verkauft / Inaktiv</span>}
           </div>
           <p className="text-sm text-slate-400">
@@ -146,7 +155,7 @@ export default function CarCard({ car, onChange }) {
           {car.llm_analyse && <p className="mt-1 text-sm">{car.llm_analyse}</p>}
           <div className="mt-2 flex items-center gap-4 text-sm">
             <a href={car.url} target="_blank" rel="noreferrer" className="text-sky-400">
-              Ver anuncio original ↗
+              Ver en {SOURCE_LABEL[car.source] ?? car.source} ↗
             </a>
             <button onClick={() => setOpen(!open)} className="text-slate-400 hover:text-white">
               {open ? "Cerrar seguimiento" : car.notizen ? "Seguimiento · con notas" : "Seguimiento"}

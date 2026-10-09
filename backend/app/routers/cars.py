@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -21,6 +22,7 @@ def _out(car: Car, weights: dict) -> CarOut:
 
 @router.get("", response_model=list[CarOut])
 def list_cars(
+    fuente: Literal["kleinanzeigen", "autoscout24"] | None = None,
     marke: str | None = None,
     modell: str | None = None,
     getriebe: str | None = None,
@@ -32,6 +34,8 @@ def list_cars(
     q = select(Car).order_by(Car.score.desc().nulls_last())
     if not inaktiv_anzeigen:
         q = q.where(Car.aktiv.is_(True))
+    if fuente:
+        q = q.where(Car.source == fuente)
     if marke:
         q = q.where(Car.marke == marke)
     if modell:

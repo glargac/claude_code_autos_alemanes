@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
-import CarCard, { STATUSES } from "./CarCard.jsx";
+import CarCard, { SOURCE_LABEL, STATUSES } from "./CarCard.jsx";
 import Settings from "./Settings.jsx";
 
 const MARKEN = ["Mercedes-Benz", "BMW", "Audi", "Volkswagen", "Porsche"];
-const EMPTY_FILTERS = { marke: "", modell: "", getriebe: "", status: "", publicado_dias: "", inaktiv_anzeigen: false };
+const EMPTY_FILTERS = { fuente: "", marke: "", modell: "", getriebe: "", status: "", publicado_dias: "", inaktiv_anzeigen: false };
 const sel = "rounded-lg bg-slate-900 px-3 py-1.5 text-sm ring-1 ring-slate-700";
 
 function Filters({ filters, setFilters, count }) {
@@ -12,6 +12,10 @@ function Filters({ filters, setFilters, count }) {
   const dirty = JSON.stringify(filters) !== JSON.stringify(EMPTY_FILTERS);
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <select className={sel} value={filters.fuente} onChange={(e) => set("fuente", e.target.value)}>
+        <option value="">Fuente: todas</option>
+        {Object.entries(SOURCE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+      </select>
       <select className={sel} value={filters.marke} onChange={(e) => set("marke", e.target.value)}>
         <option value="">Marke: todas</option>
         {MARKEN.map((m) => <option key={m}>{m}</option>)}
@@ -47,6 +51,7 @@ function Filters({ filters, setFilters, count }) {
   );
 }
 
+const SOURCE_NAMES = { kleinanzeigen: "kleinanzeigen.de", autoscout24: "AutoScout24" };
 const PHASE_LABELS = { listas: "Buscando anuncios", detalles: "Leyendo detalles", verificar: "Comprobando vendidos" };
 
 function ago(iso, now) {
@@ -61,7 +66,9 @@ function ago(iso, now) {
 function SyncBanner({ sync }) {
   if (sync.running) {
     const p = sync.progress;
-    const label = p ? `${PHASE_LABELS[p.phase]}${p.total ? ` · ${p.done} de ${p.total}` : ""}` : "Iniciando…";
+    const label = p
+      ? `${SOURCE_NAMES[p.source] ?? ""} · ${PHASE_LABELS[p.phase]}${p.total ? ` · ${p.done} de ${p.total}` : ""}`
+      : "Iniciando…";
     return (
       <div className="space-y-2 rounded-lg bg-sky-950 px-4 py-3 text-sm text-sky-200">
         <div className="flex justify-between">
@@ -76,12 +83,21 @@ function SyncBanner({ sync }) {
     );
   }
   if (sync.error) return <p className="rounded-lg bg-red-950 px-4 py-2 text-sm text-red-300">Error en la sincronización: {sync.error}</p>;
-  if (sync.result)
+  if (sync.result) {
+    const fehler = sync.result.fehler ?? [];
     return (
-      <p className="rounded-lg bg-green-950 px-4 py-2 text-sm text-green-300">
-        Sincronización terminada: {sync.result.nuevos} nuevos, {sync.result.actualizados} actualizados, {sync.result.inactivos} inactivos.
-      </p>
+      <div className="space-y-1">
+        <p className="rounded-lg bg-green-950 px-4 py-2 text-sm text-green-300">
+          Sincronización terminada: {sync.result.nuevos} nuevos, {sync.result.actualizados} actualizados, {sync.result.inactivos} inactivos.
+        </p>
+        {fehler.map((f) => (
+          <p key={f} className="rounded-lg bg-amber-950 px-4 py-2 text-sm text-amber-300">
+            Fuente con problemas: {f}
+          </p>
+        ))}
+      </div>
     );
+  }
   return null;
 }
 
