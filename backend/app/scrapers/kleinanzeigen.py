@@ -19,7 +19,9 @@ from urllib.parse import quote
 from bs4 import BeautifulSoup
 from playwright.async_api import BrowserContext, async_playwright
 
-from .base import Progress, ScrapedCar, Scraper
+from playwright.async_api import Error as PlaywrightError
+
+from .base import Progress, ScrapedCar, Scraper, check_failure_rate, retry
 
 BASE = "https://www.kleinanzeigen.de"
 UA = (
@@ -160,7 +162,9 @@ class KleinanzeigenScraper(Scraper):
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             try:
-                yield await browser.new_context(locale="de-DE", user_agent=UA)
+                ctx = await browser.new_context(locale="de-DE", user_agent=UA)
+                ctx.set_default_timeout(60000)  # el equipo puede ir lento (p. ej. tras reposo)
+                yield ctx
             finally:
                 await browser.close()
 
@@ -179,30 +183,52 @@ class KleinanzeigenScraper(Scraper):
         self, params: dict, known_ids: frozenset[str] = frozenset(), progress: Progress | None = None
     ) -> list[ScrapedCar]:
         report = progress or (lambda *_: None)
+        self.warnings = []
         results: dict[str, ScrapedCar] = {}
         async with self._context() as ctx:
             loc_id = await self._resolve_location(ctx, params["ort_oder_plz"])
             page = await ctx.new_page()
             marken = params["marken"]
             report("listas", 0, len(marken))
+            failed_brands = 0
             for i, marke in enumerate(marken, 1):
-                for n in range(1, MAX_PAGES + 1):
-                    await page.goto(build_url(params, marke, loc_id, n), wait_until="domcontentloaded")
-                    await page.wait_for_selector("article[data-adid], h1", timeout=15000)
-                    cars = parse_listing(await page.content(), marke)
-                    for c in cars:
-                        results.setdefault(c.external_id, c)
-                    if len(cars) < 25:
-                        break
-                    await self._pause()
+                n = 1
+                try:
+                    for n in range(1, MAX_PAGES + 1):
+                        async def load(n=n):
+                            await page.goto(build_url(params, marke, loc_id, n), wait_until="domcontentloaded")
+                            await page.wait_for_selector("article[data-adid], h1", timeout=30000)
+
+                        await retry(load)
+                        cars = parse_listing(await page.content(), marke)
+                        for c in cars:
+                            results.setdefault(c.external_id, c)
+                        if len(cars) < 25:
+                            break
+                        await self._pause()
+                except PlaywrightError as exc:
+                    self.warnings.append(
+                        f"{marke}: la página {n} no cargó ({type(exc).__name__}); se conserva lo leído antes"
+                    )
+                    failed_brands += n == 1
                 report("listas", i, len(marken))
                 await self._pause()
 
+            if failed_brands == len(marken):
+                raise RuntimeError(f"{self.name}: no se pudo cargar ninguna marca (¿sin conexión o bloqueo?)")
+
             pending = [c for c in results.values() if c.external_id not in known_ids]  # los conocidos ya tienen detalle
             report("detalles", 0, len(pending))
+            failed = 0
             for done, car in enumerate(pending, 1):
                 report("detalles", done - 1, len(pending))
-                await page.goto(car.url, wait_until="domcontentloaded")
+                try:
+                    await retry(lambda: page.goto(car.url, wait_until="domcontentloaded"))
+                except PlaywrightError:
+                    del results[car.external_id]  # sin detalle no se guarda; se reintenta en la próxima sync
+                    failed += 1
+                    check_failure_rate(failed, done, self.name)
+                    continue
                 if "/s-anzeige/" not in page.url:
                     continue
                 detail = parse_detail(await page.content())
@@ -223,7 +249,10 @@ class KleinanzeigenScraper(Scraper):
         async with self._context() as ctx:
             page = await ctx.new_page()
             for i, url in enumerate(urls, 1):
-                r = await page.goto(url, wait_until="domcontentloaded")
+                try:
+                    r = await retry(lambda: page.goto(url, wait_until="domcontentloaded"))
+                except PlaywrightError:
+                    continue  # no se pudo comprobar: se asume vigente y se reintenta en la próxima sync
                 if not (r and r.status < 400 and "/s-anzeige/" in page.url):
                     gone.add(url)
                 if progress:

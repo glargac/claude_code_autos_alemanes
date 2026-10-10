@@ -1,7 +1,11 @@
+import asyncio
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import TypeVar
+
+from playwright.async_api import Error as PlaywrightError
 
 
 @dataclass
@@ -27,12 +31,36 @@ class ScrapedCar:
     extra: dict = field(default_factory=dict)
 
 
+T = TypeVar("T")
+MAX_FAILURE_RATIO = 0.5  # si fallan más de la mitad de las páginas de detalle (con un mínimo), la fuente se aborta
+MIN_FAILURES_TO_ABORT = 10
+
+
+async def retry(fn: Callable[[], Awaitable[T]], attempts: int = 2, pause: float = 4.0) -> T:
+    """Reintenta ante fallos de red/navegación (timeouts...). Un bloqueo HTTP (RuntimeError) no se reintenta."""
+    for i in range(attempts):
+        try:
+            return await fn()
+        except PlaywrightError:
+            if i == attempts - 1:
+                raise
+            await asyncio.sleep(pause)
+    raise AssertionError("unreachable")
+
+
+def check_failure_rate(failed: int, attempted: int, source: str) -> None:
+    """Aborta la fuente si casi todo falla (p. ej. empieza a bloquear): mejor un error claro que datos a medias."""
+    if failed >= MIN_FAILURES_TO_ABORT and failed > attempted * MAX_FAILURE_RATIO:
+        raise RuntimeError(f"{source}: fallaron {failed} de {attempted} páginas de detalle (¿bloqueo o caída del sitio?)")
+
+
 # progress(fase, hecho, total) con fase en {"listas", "detalles", "verificar"}
 Progress = Callable[[str, int, int], None]
 
 
 class Scraper(ABC):
     name: str
+    warnings: list[str] = []  # problemas no fatales de la última búsqueda (se muestran en la interfaz)
 
     @abstractmethod
     async def search(

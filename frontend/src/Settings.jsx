@@ -8,7 +8,7 @@ const WEIGHT_FIELDS = [
   ["kilometer", "Kilometer", "A menor km, más puntos"],
   ["klimaanlage", "Klimaanlage", "Aire acondicionado / Klimaautomatik"],
   ["tuev", "TÜV", "Vigencia de la ITV alemana"],
-  ["precio", "Precio", "Más barato que coches comparables (mismo modelo y año ±2) = más puntos"],
+  ["precio", "Precio", "Más barato de lo esperado para su modelo, año y km = más puntos"],
   ["cabrio_saison", "Cabrio / estación", "Descapotables puntúan más en primavera-verano"],
   ["llm_rentabilidad", "Rentabilidad (LLM)", "Margen y demanda en la Costa del Sol"],
 ];

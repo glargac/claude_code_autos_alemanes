@@ -22,7 +22,9 @@ from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup
 from playwright.async_api import Page, async_playwright
 
-from .base import Progress, ScrapedCar, Scraper
+from playwright.async_api import Error as PlaywrightError
+
+from .base import Progress, ScrapedCar, Scraper, check_failure_rate, retry
 
 BASE = "https://www.autoscout24.de"
 MAX_PAGES = 5  # 20 anuncios por página, ordenados del más reciente al más antiguo
@@ -170,7 +172,9 @@ class AutoScout24Scraper(Scraper):
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             try:
-                yield await browser.new_context(locale="de-DE")
+                ctx = await browser.new_context(locale="de-DE")
+                ctx.set_default_timeout(60000)  # el equipo puede ir lento (p. ej. tras reposo)
+                yield ctx
             finally:
                 await browser.close()
 
@@ -193,36 +197,57 @@ class AutoScout24Scraper(Scraper):
         self, params: dict, known_ids: frozenset[str] = frozenset(), progress: Progress | None = None
     ) -> list[ScrapedCar]:
         report = progress or (lambda *_: None)
+        self.warnings = []
         modell = re.sub(r"[\s-]", "", (params.get("modell") or "").lower())
         results: dict[str, ScrapedCar] = {}
         async with self._context() as ctx:
             page = await ctx.new_page()
             marken = params["marken"]
             report("listas", 0, len(marken))
+            failed_brands = 0
             for i, marke in enumerate(marken, 1):
-                for n in range(1, MAX_PAGES + 1):
-                    props, _ = await self._props(page, build_url(params, marke, n))
-                    if n == 1 and not location_ok(params["ort_oder_plz"], props):
-                        raise ValueError(
-                            f"Ort oder PLZ no reconocido por AutoScout24: {params['ort_oder_plz']!r} "
-                            f"(lo interpretó como {props.get('pageQuery', {}).get('zip')!r})"
-                        )
-                    cars = parse_listing(props)
-                    for c in cars:
-                        text = re.sub(r"[\s-]", "", c.titel.lower())
-                        if not modell or modell in text:  # el filtro de modelo de la URL puede ignorarse
-                            results.setdefault(c.external_id, c)
-                    if len(cars) < 20 or n >= props.get("numberOfPages", 1):
-                        break
-                    await self._pause()
+                n = 1
+                try:
+                    for n in range(1, MAX_PAGES + 1):
+                        props, _ = await retry(lambda: self._props(page, build_url(params, marke, n)))
+                        if n == 1 and not location_ok(params["ort_oder_plz"], props):
+                            raise ValueError(
+                                f"Ort oder PLZ no reconocido por AutoScout24: {params['ort_oder_plz']!r} "
+                                f"(lo interpretó como {props.get('pageQuery', {}).get('zip')!r})"
+                            )
+                        cars = parse_listing(props)
+                        for c in cars:
+                            text = re.sub(r"[\s-]", "", c.titel.lower())
+                            if not modell or modell in text:  # el filtro de modelo de la URL puede ignorarse
+                                results.setdefault(c.external_id, c)
+                        if len(cars) < 20 or n >= props.get("numberOfPages", 1):
+                            break
+                        await self._pause()
+                except PlaywrightError as exc:
+                    self.warnings.append(
+                        f"{marke}: la página {n} no cargó ({type(exc).__name__}); se conserva lo leído antes"
+                    )
+                    failed_brands += n == 1
                 report("listas", i, len(marken))
                 await self._pause()
 
+            if failed_brands == len(marken):
+                raise RuntimeError(f"{self.name}: no se pudo cargar ninguna marca (¿sin conexión o bloqueo?)")
+
             pending = [c for c in results.values() if c.external_id not in known_ids]
             report("detalles", 0, len(pending))
+            failed = 0
             for done, car in enumerate(pending, 1):
                 report("detalles", done - 1, len(pending))
-                props, final_url = await self._props(page, car.url, gone_ok=True)
+                try:
+                    props, final_url = await retry(lambda: self._props(page, car.url, gone_ok=True))
+                except PlaywrightError:
+                    # Sin detalle no hay TÜV/Klima/fecha: se descarta y se reintentará en la próxima sync
+                    # (si se guardara a medias, nunca se volvería a pedir el detalle).
+                    del results[car.external_id]
+                    failed += 1
+                    check_failure_rate(failed, done, self.name)
+                    continue
                 if "/angebote/" in final_url:
                     for k, v in parse_detail(props).items():
                         setattr(car, k, v)
@@ -237,7 +262,10 @@ class AutoScout24Scraper(Scraper):
         async with self._context() as ctx:
             page = await ctx.new_page()
             for i, url in enumerate(urls, 1):
-                props, final_url = await self._props(page, url, gone_ok=True)
+                try:
+                    props, final_url = await retry(lambda: self._props(page, url, gone_ok=True))
+                except PlaywrightError:
+                    continue  # no se pudo comprobar: se asume vigente y se reintenta en la próxima sync
                 if "/angebote/" not in final_url or not parse_detail(props):
                     gone.add(url)
                 if progress:

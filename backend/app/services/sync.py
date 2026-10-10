@@ -36,6 +36,7 @@ async def run_sync(db: Session, progress=None) -> dict:
     market = MarketIndex(db.scalars(select(Car).where(Car.aktiv.is_(True))))
     nuevos = actualizados = inactivos = 0
     fehler: list[str] = []
+    fuentes_ok = 0
 
     for i, scraper in enumerate(SCRAPERS):
         def report(phase, done, total, _i=i, _name=scraper.name):
@@ -45,7 +46,9 @@ async def run_sync(db: Session, progress=None) -> dict:
         try:
             seen: set[str] = set()
             known = frozenset(db.scalars(select(Car.external_id).where(Car.source == scraper.name)))
-            for item in await scraper.search(search, known, report):
+            items = await scraper.search(search, known, report)
+            fehler.extend(f"{scraper.name} (aviso): {w}" for w in scraper.warnings)
+            for item in items:
                 if item.kraftstoffart and item.kraftstoffart.casefold() not in wanted_fuels:
                     continue  # p. ej. eléctricos o híbridos: fuera de alcance
                 seen.add(item.external_id)
@@ -73,12 +76,16 @@ async def run_sync(db: Session, progress=None) -> dict:
                     car.aktiv = False
                     inactivos += 1
             db.commit()
+            fuentes_ok += 1
             rescore_all(db)  # con los coches nuevos ya guardados, el precio de todos se compara con un mercado mayor
         except Exception as exc:
             db.rollback()
             fehler.append(f"{scraper.name}: {type(exc).__name__}: {exc}")
 
-    return {"nuevos": nuevos, "actualizados": actualizados, "inactivos": inactivos, "fehler": fehler}
+    return {
+        "nuevos": nuevos, "actualizados": actualizados, "inactivos": inactivos,
+        "fuentes_ok": fuentes_ok, "fehler": fehler,
+    }
 
 
 def rescore_all(db: Session) -> int:
@@ -120,7 +127,12 @@ async def _run_in_background() -> None:
     try:
         with SessionLocal() as db:
             result = await run_sync(db, _progress)
-            save_setting(db, "sync_meta", {"last_sync_at": _utc_now(), "last_result": result})
+            # La hora de "última sync" solo avanza si al menos una fuente funcionó; si no, la sync al abrir
+            # seguiría creyendo que los datos están frescos sin haber descargado nada.
+            meta = {**get_setting(db, "sync_meta"), "last_result": result}  # conserva la última hora válida
+            if result["fuentes_ok"]:
+                meta["last_sync_at"] = _utc_now()
+            save_setting(db, "sync_meta", meta)
         sync_state["result"] = result
         sync_state["error"] = None
     except Exception as exc:  # se muestra en la UI
