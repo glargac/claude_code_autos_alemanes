@@ -14,7 +14,7 @@ No pegues comentarios `#` al final de un comando en zsh interactivo: se pasan co
 ## Estructura
 
 - `backend/app/scrapers/` — un scraper por fuente (`base.py` define `Scraper`, `ScrapedCar`). Implementados: `kleinanzeigen.py` y `autoscout24.py`.
-- `backend/app/services/` — `sync.py` (scraping → upsert → scoring → vigencia, y estado de la sync en segundo plano), `scoring.py` (determinista), `llm.py` (rentabilidad, opcional), `settings_store.py`.
+- `backend/app/services/` — `dedupe.py` (anuncios duplicados), `sync.py` (scraping → upsert → scoring → vigencia, y estado de la sync en segundo plano), `scoring.py` (determinista), `llm.py` (rentabilidad, opcional), `settings_store.py`.
 - `backend/app/routers/` — `/api/cars`, `/api/settings/{search|weights|app}`, `/api/sync`, `/api/sync/status`, `/api/sync/auto`.
 - `frontend/src/` — `App.jsx` (dashboard, filtros, barra de sync), `CarCard.jsx` (tarjeta + seguimiento CRM), `Settings.jsx`.
 
@@ -39,6 +39,10 @@ No pegues comentarios `#` al final de un comando en zsh interactivo: se pasan co
 **mobile.de: bloqueado.** Devuelve 403 "Zugriff verweigert" (anti-bot) a un navegador automatizado, con y sin User-Agent propio. No se intenta evadir. No volver a probarlo sin una vía legítima (p. ej. API de socio).
 
 **Robustez de los scrapers** (`scrapers/base.py`): `retry` reintenta una vez ante timeouts de red/navegación; un HTTP de error (403...) se trata como bloqueo y aborta la fuente. Si falla la página de detalle de un coche, ese coche se descarta (no se guarda a medias: nunca se volvería a pedir su detalle) y se reintenta en la próxima sync; si fallan más de la mitad (mínimo 10), la fuente aborta. Al comprobar vigencia, un fallo de red deja el coche como vigente. Si falla una página de lista, la marca se corta ahí (se conserva lo leído) y se anota un aviso en `scraper.warnings`, que `run_sync` añade a `fehler` como "(aviso)"; solo se aborta la fuente si no carga ninguna marca, si hay un HTTP de error (bloqueo) o si el lugar no se reconoce. Tiempo máximo de carga por página: 60 s.
+
+**Duplicados** (`services/dedupe.py`): el mismo coche puede estar en los dos portales o repetido en uno. Las filas **no se borran** (la sync identifica anuncios por fuente + id externo y los recrearía): una es la principal y las demás tienen `duplicado_de` = id de la principal. La lista solo muestra principales, con `otros_enlaces`. Reglas conservadoras (un falso positivo esconde un coche distinto): misma marca, modelo, año, combustible y Getriebe, y (1) km idénticos + precio ±3 % + mismo sitio o km no redondo; (2) km ±0,3 % + precio ±2 % + mismo sitio o título parecido; (3) km ±0,1 % no redondos + precio ±2 %. "Redondo" = múltiplo de 100 (los vendedores redondean). Principal: la que ya tiene seguimiento (estado/notas/cita), luego la más completa, luego la más antigua. Se recalcula al arrancar el backend y tras guardar cada fuente; el índice de precios cuenta cada coche una sola vez. En la base real: 79 duplicados (59 entre portales, 20 en el mismo portal) de 963 activos.
+
+**Migraciones:** `database.ensure_columns()` añade al arrancar las columnas nuevas a una base existente (`create_all` no altera tablas). Al añadir una columna al modelo, registrarla en `_ADDED_COLUMNS`.
 
 **Sync y scoring:**
 - Cada fuente se procesa y se guarda por separado: si una falla (bloqueo, cambio de web), las demás siguen y el error aparece en `fehler` del resultado y en la interfaz.

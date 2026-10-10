@@ -7,17 +7,27 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Car, Status
-from ..schemas import CarOut, CarUpdate
+from ..schemas import CarOut, CarUpdate, OtroEnlace
 from ..services.scoring import color_for
 from ..services.settings_store import get_setting
 
 router = APIRouter(prefix="/api/cars", tags=["cars"])
 
 
-def _out(car: Car, weights: dict) -> CarOut:
+def _out(car: Car, weights: dict, others: dict[int, list[Car]]) -> CarOut:
     out = CarOut.model_validate(car)
     out.farbe = color_for(car.score, weights)
+    out.otros_enlaces = [OtroEnlace.model_validate(o) for o in others.get(car.id, [])]
     return out
+
+
+def _others(db: Session, ids: list[int]) -> dict[int, list[Car]]:
+    """Anuncios duplicados (activos) de cada coche principal: {id principal: [duplicados]}."""
+    grouped: dict[int, list[Car]] = {}
+    if ids:
+        for d in db.scalars(select(Car).where(Car.duplicado_de.in_(ids)).order_by(Car.preis)):
+            grouped.setdefault(d.duplicado_de, []).append(d)
+    return grouped
 
 
 @router.get("", response_model=list[CarOut])
@@ -31,7 +41,7 @@ def list_cars(
     inaktiv_anzeigen: bool = False,
     db: Session = Depends(get_db),
 ):
-    q = select(Car).order_by(Car.score.desc().nulls_last())
+    q = select(Car).where(Car.duplicado_de.is_(None)).order_by(Car.score.desc().nulls_last())  # los duplicados cuelgan de su principal
     if not inaktiv_anzeigen:
         q = q.where(Car.aktiv.is_(True))
     if fuente:
@@ -47,7 +57,9 @@ def list_cars(
     if publicado_dias:
         q = q.where(Car.veroeffentlicht_am >= datetime.utcnow() - timedelta(days=publicado_dias))
     weights = get_setting(db, "weights")
-    return [_out(c, weights) for c in db.scalars(q)]
+    cars = db.scalars(q).all()
+    others = _others(db, [c.id for c in cars])
+    return [_out(c, weights, others) for c in cars]
 
 
 @router.patch("/{car_id}", response_model=CarOut)
@@ -66,4 +78,4 @@ def update_car(car_id: int, body: CarUpdate, db: Session = Depends(get_db)):
     if body.notizen is not None:
         car.notizen = body.notizen
     db.commit()
-    return _out(car, get_setting(db, "weights"))
+    return _out(car, get_setting(db, "weights"), _others(db, [car.id]))

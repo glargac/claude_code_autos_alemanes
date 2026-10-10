@@ -7,6 +7,17 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .models import Status
 
 
+class OtroEnlace(BaseModel):
+    """Otro anuncio del mismo coche (otro portal, o repetido en el mismo)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    source: str
+    url: str
+    preis: int | None
+    ort: str | None
+
+
 class CarOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -33,6 +44,7 @@ class CarOut(BaseModel):
     notizen: str
     aktiv: bool
     farbe: str = "gris"
+    otros_enlaces: list[OtroEnlace] = []
 
 
 class CarUpdate(BaseModel):

@@ -9,6 +9,7 @@ from ..models import Car
 from ..scrapers.base import Scraper
 from ..scrapers.kleinanzeigen import KleinanzeigenScraper
 from ..scrapers.autoscout24 import AutoScout24Scraper
+from .dedupe import apply_duplicates
 from .llm import analyze_prompt, build_prompt, enabled as llm_enabled
 from .scoring import MarketIndex, compute_score
 from .settings_store import get_setting, save_setting
@@ -33,7 +34,7 @@ async def run_sync(db: Session, progress=None) -> dict:
     search, weights = get_setting(db, "search"), get_setting(db, "weights")
     now = datetime.utcnow()
     wanted_fuels = {f.casefold() for f in search["kraftstoffart"]}
-    market = MarketIndex(db.scalars(select(Car).where(Car.aktiv.is_(True))))
+    market = MarketIndex(db.scalars(select(Car).where(Car.aktiv.is_(True), Car.duplicado_de.is_(None))))
     nuevos = actualizados = inactivos = 0
     fehler: list[str] = []
     fuentes_ok = 0
@@ -89,6 +90,7 @@ async def run_sync(db: Session, progress=None) -> dict:
             db.commit()
             nuevos, actualizados, inactivos = nuevos + nuevos_f, actualizados + actualizados_f, inactivos + inactivos_f
             fuentes_ok += 1
+            apply_duplicates(db)
             rescore_all(db)  # con los coches nuevos ya guardados, el precio de todos se compara con un mercado mayor
         except Exception as exc:
             db.rollback()
@@ -104,7 +106,7 @@ def rescore_all(db: Session) -> int:
     """Recalcula scores con los pesos/rangos actuales reutilizando la nota LLM guardada (sin llamar al LLM)."""
     search, weights = get_setting(db, "search"), get_setting(db, "weights")
     cars = db.scalars(select(Car)).all()
-    market = MarketIndex(c for c in cars if c.aktiv)
+    market = MarketIndex(c for c in cars if c.aktiv and c.duplicado_de is None)  # un coche repetido cuenta una vez
     for car in cars:
         llm = (car.score_detail or {}).get("llm_rentabilidad")
         car.score, car.score_detail = compute_score(car, weights, search, llm, market)

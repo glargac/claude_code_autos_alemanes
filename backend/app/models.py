@@ -50,6 +50,8 @@ class Car(Base):
     notizen: Mapped[str] = mapped_column(Text, default="")
 
     aktiv: Mapped[bool] = mapped_column(default=True, index=True)  # False = Verkauft / Inaktiv
+    # Si es el mismo coche que otro anuncio (otro portal o repetido): id de la fila principal. Ver services/dedupe.py
+    duplicado_de: Mapped[int | None] = mapped_column(Integer, index=True)
     erstmals_gesehen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     zuletzt_gesehen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

@@ -158,6 +158,12 @@ export default function CarCard({ car, onChange }) {
             <a href={car.url} target="_blank" rel="noreferrer" className="text-sky-400">
               Ver en {SOURCE_LABEL[car.source] ?? car.source} ↗
             </a>
+            {(car.otros_enlaces ?? []).map((o) => (
+              <a key={o.url} href={o.url} target="_blank" rel="noreferrer" className="text-sky-400/80" title="Mismo coche en otro anuncio">
+                También en {SOURCE_LABEL[o.source] ?? o.source}
+                {o.preis != null && o.preis !== car.preis ? ` · ${o.preis.toLocaleString("de-DE")} €` : ""} ↗
+              </a>
+            ))}
             <button onClick={() => setOpen(!open)} className="text-slate-400 hover:text-white">
               {open ? "Cerrar seguimiento" : car.notizen ? "Seguimiento · con notas" : "Seguimiento"}
             </button>
