@@ -4,6 +4,10 @@ App local para buscar, puntuar y seguir coches alemanes (Mercedes-Benz, BMW, Aud
 
 ## Arranque
 
+**Uso diario:** `scripts/instalar-agente.sh` instala un agente de launchd (`com.autos-alemanes.costa-del-sol`) que mantiene el backend en `127.0.0.1:8000`, y este sirve también la interfaz compilada (`frontend/dist`, hay que `npm run build` tras cambiar el frontend). `scripts/abrir.command` abre la app. Registro: `~/Library/Logs/autos-alemanes.log`. **Tras cambiar código del backend hay que reiniciarlo**: `launchctl kickstart -k gui/$(id -u)/com.autos-alemanes.costa-del-sol`. Si el agente está instalado, el puerto 8000 está ocupado: para desarrollar con otro backend, `scripts/desinstalar-agente.sh` primero. Los scripts no llevan rutas personales (el repo es público): las calculan desde su ubicación.
+
+**Desarrollo:**
+
 ```bash
 cd backend && source .venv/bin/activate && uvicorn app.main:app --reload --port 8000
 cd frontend && npm run dev          # http://localhost:5173, el proxy envía /api al backend

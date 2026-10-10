@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import env
 from .database import Base, SessionLocal, engine, ensure_columns
@@ -46,3 +48,10 @@ app.include_router(settings.router)
 @app.get("/api/health")
 def health():
     return {"ok": True}
+
+
+# Si la interfaz está compilada (npm run build), el propio backend la sirve: una sola dirección y un solo
+# proceso. Debe ir al final para no tapar las rutas /api. En desarrollo se sigue usando Vite (:5173).
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")

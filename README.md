@@ -35,6 +35,20 @@ npm run dev
 ```
 Abre http://localhost:5173 (el proxy envía `/api` al backend).
 
+## Uso diario (macOS)
+
+Con la interfaz compilada (`cd frontend && npm run build`), el backend la sirve en **http://localhost:8000** (solo accesible desde tu Mac). No hace falta Vite ni dos terminales.
+
+```bash
+scripts/instalar-agente.sh      # una vez: el backend arranca al iniciar sesión y se reinicia si se cae
+scripts/abrir.command           # doble clic: abre la app (arranca el backend si hace falta)
+scripts/desinstalar-agente.sh   # quita el agente (no toca la base de datos)
+```
+
+Registro del backend: `~/Library/Logs/autos-alemanes.log`. La sync diaria solo se ejecuta si el Mac está despierto a esa hora; si no, la sync al abrir cubre el hueco. Tras cambiar el código hay que reiniciarlo: `launchctl kickstart -k gui/$(id -u)/com.autos-alemanes.costa-del-sol`.
+
+Para desarrollar con recarga en caliente, usa los dos comandos de arriba (backend en :8000 y Vite en :5173) con el agente desinstalado.
+
 ## Estado
 
 Hecho:
