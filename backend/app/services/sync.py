@@ -45,6 +45,7 @@ async def run_sync(db: Session, progress=None) -> dict:
 
         try:
             seen: set[str] = set()
+            nuevos_f = actualizados_f = inactivos_f = 0  # de esta fuente; se suman solo si se guarda
             known = frozenset(db.scalars(select(Car.external_id).where(Car.source == scraper.name)))
             items = await scraper.search(search, known, report)
             fehler.extend(f"{scraper.name} (aviso): {w}" for w in scraper.warnings)
@@ -52,18 +53,28 @@ async def run_sync(db: Session, progress=None) -> dict:
                 if item.kraftstoffart and item.kraftstoffart.casefold() not in wanted_fuels:
                     continue  # p. ej. eléctricos o híbridos: fuera de alcance
                 seen.add(item.external_id)
-                car = db.scalar(select(Car).where(Car.source == item.source, Car.external_id == item.external_id))
                 data = {k: v for k, v in item.__dict__.items() if k != "extra" and v not in (None, "")}
-                if car:
-                    for k, v in data.items():
-                        setattr(car, k, v)
-                    car.aktiv, car.zuletzt_gesehen = True, now
-                    actualizados += 1
+                try:
+                    with db.begin_nested():  # savepoint: un coche con datos raros no tumba al resto de la fuente
+                        car = db.scalar(
+                            select(Car).where(Car.source == item.source, Car.external_id == item.external_id)
+                        )
+                        created = car is None
+                        if car:
+                            for k, v in data.items():
+                                setattr(car, k, v)
+                            car.aktiv, car.zuletzt_gesehen = True, now
+                        else:
+                            car = Car(**{"marke": "", "modell": "", **data}, erstmals_gesehen=now, zuletzt_gesehen=now)
+                            db.add(car)
+                        await rescore(car, weights, search, market)
+                except Exception as exc:
+                    fehler.append(f"{scraper.name} (aviso): se omitió el anuncio {item.external_id}: {type(exc).__name__}: {str(exc)[:120]}")
+                    continue
+                if created:
+                    nuevos_f += 1
                 else:
-                    car = Car(**data, erstmals_gesehen=now, zuletzt_gesehen=now)
-                    db.add(car)
-                    nuevos += 1
-                await rescore(car, weights, search, market)
+                    actualizados_f += 1
 
             # Vigencia: activos de esta fuente que no aparecieron -> verificar individualmente.
             missing = [
@@ -74,8 +85,9 @@ async def run_sync(db: Session, progress=None) -> dict:
             for car in missing:
                 if car.url in gone:
                     car.aktiv = False
-                    inactivos += 1
+                    inactivos_f += 1
             db.commit()
+            nuevos, actualizados, inactivos = nuevos + nuevos_f, actualizados + actualizados_f, inactivos + inactivos_f
             fuentes_ok += 1
             rescore_all(db)  # con los coches nuevos ya guardados, el precio de todos se compara con un mercado mayor
         except Exception as exc:

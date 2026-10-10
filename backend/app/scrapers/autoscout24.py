@@ -106,8 +106,8 @@ def parse_listing(props: dict) -> list[ScrapedCar]:
             source="autoscout24",
             external_id=x["id"],
             url=BASE + x["url"].split("?")[0],
-            marke=v.get("make", ""),
-            modell=v.get("model", ""),
+            marke=v.get("make") or "",
+            modell=v.get("model") or v.get("modelGroup") or v.get("variant") or "",  # algunos anuncios (furgonetas) no lo traen
             titel=" ".join(p for p in (v.get("make"), v.get("model"), v.get("modelVersionInput")) if p),
             image_url=re.sub(r"/\d+x\d+\.webp$", "/720x540.webp", img) if img else None,
             erstzulassung=_int((t.get("firstRegistration") or "")[-4:]),
