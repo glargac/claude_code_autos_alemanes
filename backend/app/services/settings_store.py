@@ -7,7 +7,7 @@ DEFAULTS = {
     "search": DEFAULT_SEARCH,
     "weights": DEFAULT_WEIGHTS,
     "app": DEFAULT_APP,
-    "sync_meta": {"last_sync_at": None, "last_result": None},  # lo escribe la propia sync
+    "sync_meta": {"last_sync_at": None, "last_result": None, "sources": {}},  # lo escribe la propia sync
 }
 
 

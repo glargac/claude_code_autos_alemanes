@@ -11,6 +11,7 @@ from ..scrapers.kleinanzeigen import KleinanzeigenScraper
 from ..scrapers.autoscout24 import AutoScout24Scraper
 from .dedupe import apply_duplicates
 from .llm import analyze_prompt, build_prompt, enabled as llm_enabled
+from .scope import out_of_scope, purge_out_of_scope
 from .scoring import MarketIndex, compute_score
 from .settings_store import get_setting, save_setting
 
@@ -37,7 +38,9 @@ async def run_sync(db: Session, progress=None) -> dict:
     market = MarketIndex(db.scalars(select(Car).where(Car.aktiv.is_(True), Car.duplicado_de.is_(None))))
     nuevos = actualizados = inactivos = 0
     fehler: list[str] = []
-    fuentes_ok = 0
+    fuentes: dict[str, bool] = {}  # resultado por fuente
+    errores: dict[str, str] = {}
+    fuentes_ok = descartados = 0
 
     for i, scraper in enumerate(SCRAPERS):
         def report(phase, done, total, _i=i, _name=scraper.name):
@@ -51,8 +54,8 @@ async def run_sync(db: Session, progress=None) -> dict:
             items = await scraper.search(search, known, report)
             fehler.extend(f"{scraper.name} (aviso): {w}" for w in scraper.warnings)
             for item in items:
-                if item.kraftstoffart and item.kraftstoffart.casefold() not in wanted_fuels:
-                    continue  # p. ej. eléctricos o híbridos: fuera de alcance
+                if out_of_scope(item, wanted_fuels):
+                    continue  # eléctricos, furgonetas de carga...: fuera de alcance
                 seen.add(item.external_id)
                 data = {k: v for k, v in item.__dict__.items() if k != "extra" and v not in (None, "")}
                 try:
@@ -90,15 +93,20 @@ async def run_sync(db: Session, progress=None) -> dict:
             db.commit()
             nuevos, actualizados, inactivos = nuevos + nuevos_f, actualizados + actualizados_f, inactivos + inactivos_f
             fuentes_ok += 1
+            fuentes[scraper.name] = True
+            descartados += purge_out_of_scope(db, wanted_fuels)
             apply_duplicates(db)
             rescore_all(db)  # con los coches nuevos ya guardados, el precio de todos se compara con un mercado mayor
         except Exception as exc:
             db.rollback()
+            fuentes[scraper.name] = False
+            errores[scraper.name] = f"{type(exc).__name__}: {(str(exc).splitlines() or [''])[0][:150]}"
             fehler.append(f"{scraper.name}: {type(exc).__name__}: {exc}")
 
     return {
         "nuevos": nuevos, "actualizados": actualizados, "inactivos": inactivos,
-        "fuentes_ok": fuentes_ok, "fehler": fehler,
+        "fuentes_ok": fuentes_ok, "fuentes": fuentes, "errores": errores, "descartados": descartados,
+        "fehler": fehler,
     }
 
 
@@ -143,9 +151,18 @@ async def _run_in_background() -> None:
             result = await run_sync(db, _progress)
             # La hora de "última sync" solo avanza si al menos una fuente funcionó; si no, la sync al abrir
             # seguiría creyendo que los datos están frescos sin haber descargado nada.
-            meta = {**get_setting(db, "sync_meta"), "last_result": result}  # conserva la última hora válida
+            meta = {**get_setting(db, "sync_meta"), "last_result": result}  # conserva las últimas horas válidas
+            now = _utc_now()
+            sources = {k: dict(v) for k, v in meta.get("sources", {}).items()}
+            for name, ok in result["fuentes"].items():
+                entry = sources.setdefault(name, {"last_sync_at": None, "error": None})
+                if ok:
+                    entry.update(last_sync_at=now, error=None)
+                else:  # la hora de la última sync buena de esa fuente NO avanza
+                    entry["error"] = result["errores"].get(name, "falló")
+            meta["sources"] = sources
             if result["fuentes_ok"]:
-                meta["last_sync_at"] = _utc_now()
+                meta["last_sync_at"] = now  # global: cuándo hubo algún dato nuevo
             save_setting(db, "sync_meta", meta)
         sync_state["result"] = result
         sync_state["error"] = None
@@ -165,18 +182,29 @@ def start_sync() -> bool:
     return True
 
 
-def _last_sync(db: Session) -> datetime | None:
-    raw = get_setting(db, "sync_meta")["last_sync_at"]
+def _parse_utc(raw: str | None) -> datetime | None:
     return datetime.fromisoformat(raw.rstrip("Z")) if raw else None
 
 
+def _last_sync(db: Session, source: str | None = None) -> datetime | None:
+    """Última sync buena de una fuente, o la global si no se indica fuente (o la base es antigua)."""
+    meta = get_setting(db, "sync_meta")
+    entry = meta.get("sources", {}).get(source) if source else None
+    if entry is not None:  # con datos por fuente: si nunca funcionó, es None (no se usa la hora de otra fuente)
+        return _parse_utc(entry.get("last_sync_at"))
+    return _parse_utc(meta["last_sync_at"])  # global, o respaldo para bases antiguas sin datos por fuente
+
+
 def status(db: Session) -> dict:
-    return {**sync_state, "last_sync_at": get_setting(db, "sync_meta")["last_sync_at"]}
+    meta = get_setting(db, "sync_meta")
+    return {**sync_state, "last_sync_at": meta["last_sync_at"], "fuentes": meta.get("sources", {})}
 
 
 def start_if_stale(db: Session) -> bool:
-    """Sync al abrir la app: solo si está activada y los datos tienen más de `max_age_hours`."""
+    """Sync al abrir la app: solo si está activada y ALGUNA fuente tiene datos con más de `max_age_hours`
+    (o nunca se sincronizó). Una fuente que falló no queda oculta por el éxito de la otra."""
     app = get_setting(db, "app")
-    last = _last_sync(db)
-    stale = last is None or datetime.utcnow() - last > timedelta(hours=app["max_age_hours"])
+    limit = timedelta(hours=app["max_age_hours"])
+    now = datetime.utcnow()
+    stale = any((last := _last_sync(db, s.name)) is None or now - last > limit for s in SCRAPERS)
     return bool(app["auto_sync_on_open"] and stale and start_sync())

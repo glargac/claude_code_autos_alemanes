@@ -63,6 +63,27 @@ function ago(iso, now) {
   return h < 48 ? `hace ${h} h` : `hace ${Math.floor(h / 24)} días`;
 }
 
+function LastSync({ sync, now }) {
+  const sources = Object.entries(sync.fuentes ?? {}); // un backend antiguo no lo envía: se usa la hora global
+  if (sources.length === 0) return <p className="text-xs text-slate-500">Última sync: {ago(sync.last_sync_at, now)}</p>;
+  return (
+    <p className="text-xs text-slate-500">
+      Última sync:{" "}
+      {sources.map(([name, e], i) => (
+        <span key={name}>
+          {i > 0 && " · "}
+          {SOURCE_NAMES[name] ?? name} {ago(e.last_sync_at, now)}
+          {e.error && (
+            <span className="text-amber-400" title={`El último intento falló: ${e.error}`}>
+              {" "}⚠
+            </span>
+          )}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 function SyncBanner({ sync }) {
   if (sync.running) {
     const p = sync.progress;
@@ -155,7 +176,7 @@ export default function App() {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Autos Alemanes · Costa del Sol</h1>
-          <p className="text-xs text-slate-500">Última sync: {ago(sync.last_sync_at, now)}</p>
+          <LastSync sync={sync} now={now} />
         </div>
         <nav className="flex items-center gap-2">
           {tabBtn("dashboard", "Dashboard")}
