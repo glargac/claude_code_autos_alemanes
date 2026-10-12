@@ -47,7 +47,7 @@ def _radius(km: int) -> int:
     return min(RADII, key=lambda r: abs(r - km))
 
 
-def build_url(params: dict, marke: str, loc_id: str, page: int = 1) -> str:
+def build_url(params: dict, marke: str, loc_id: str, page: int = 1, damaged: bool = False) -> str:
     ort = params["ort_oder_plz"]
     path = f"/s-autos/{_slug(ort)}/preis:{params['preis_ab']}:{params['preis_bis']}"
     if page > 1:
@@ -60,6 +60,7 @@ def build_url(params: dict, marke: str, loc_id: str, page: int = 1) -> str:
         f"autos.marke_s:{BRAND_SLUG[marke]}",
         f"autos.ez_i:{params['erstzulassung_ab']}%2C{params['erstzulassung_bis']}",
         f"autos.km_i:{params['kilometer_ab']}%2C{params['kilometer_bis']}",
+        f"autos.schaden_s:{'ja' if damaged else 'nein'}",  # "nein" = Unbeschädigtes Fahrzeug; "ja" solo para la limpieza
     ]
     fuels = [f.lower() for f in params.get("kraftstoffart", [])]
     if len(fuels) == 1:  # con Benzin+Diesel no hace falta filtrar
@@ -132,6 +133,8 @@ def parse_detail(html: str) -> dict:
     text = f"{title} {desc}".lower()
 
     out: dict = {"beschreibung": desc}
+    if attrs.get("Fahrzeugzustand") == "ja":  # "Beschädigtes Fahrzeug"
+        out["beschaedigt"] = True
     info = soup.select_one("#viewad-extra-info")
     if info and (d := _parse_date(info.get_text(" "))):
         out["veroeffentlicht_am"] = d
@@ -232,6 +235,9 @@ class KleinanzeigenScraper(Scraper):
                 if "/s-anzeige/" not in page.url:
                     continue
                 detail = parse_detail(await page.content())
+                if detail.get("beschaedigt"):  # red de seguridad: el filtro de la búsqueda ya los excluye
+                    del results[car.external_id]
+                    continue
                 for k, v in detail.items():
                     if v or k in ("klimaanlage", "cabrio"):
                         setattr(car, k, v)
@@ -241,6 +247,33 @@ class KleinanzeigenScraper(Scraper):
             if car.external_id not in known_ids:
                 car.modell = car.modell or car.titel.split(" ")[0]
         return list(results.values())
+
+    async def damaged_ids(self, params: dict, max_pages: int = 15) -> set[str]:
+        """Ids de los anuncios dañados (Beschädigtes Fahrzeug) que cumplen la búsqueda. Solo para la limpieza
+        de coches guardados antes de que la búsqueda los excluyera."""
+        self.warnings = []
+        ids: set[str] = set()
+        async with self._context() as ctx:
+            loc_id = await self._resolve_location(ctx, params["ort_oder_plz"])
+            page = await ctx.new_page()
+            for marke in params["marken"]:
+                for n in range(1, max_pages + 1):
+                    async def load(marke=marke, n=n):
+                        await page.goto(build_url(params, marke, loc_id, n, damaged=True), wait_until="domcontentloaded")
+                        await page.wait_for_selector("article[data-adid], h1", timeout=30000)
+
+                    try:
+                        await retry(load)
+                    except PlaywrightError as exc:
+                        self.warnings.append(f"{marke}: la página {n} de dañados no cargó ({type(exc).__name__})")
+                        break
+                    cars = parse_listing(await page.content(), marke)
+                    ids.update(c.external_id for c in cars)
+                    if len(cars) < 25:
+                        break
+                    await self._pause()
+                await self._pause()
+        return ids
 
     async def inactive_urls(self, urls: list[str], progress: Progress | None = None) -> set[str]:
         gone: set[str] = set()

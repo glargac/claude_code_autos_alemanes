@@ -101,6 +101,8 @@ def parse_listing(props: dict) -> list[ScrapedCar]:
         v, loc, t = x.get("vehicle", {}), x.get("location", {}), x.get("tracking", {})
         if not x.get("id") or not x.get("url"):
             continue
+        if v.get("isCurrentlyDamaged"):  # red de seguridad: la búsqueda ya usa damaged_listing=exclude
+            continue
         img = (x.get("images") or [None])[0]
         cars.append(ScrapedCar(
             source="autoscout24",

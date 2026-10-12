@@ -27,6 +27,7 @@ No pegues comentarios `#` al final de un comando en zsh interactivo: se pasan co
 **kleinanzeigen.de** (verificado contra el sitio real, puede cambiar):
 - El filtro de ciudad solo se aplica con el id de ubicación `l<ID>` en la URL; sin él busca en toda Alemania. El id sale de `/s-ort-empfehlungen.json?query=<Ort o PLZ>` (Stuttgart = 9280).
 - Los rangos usan `%2C`: `autos.ez_i:2010%2C2020`, `autos.km_i:50000%2C170000`. Con `:` el filtro se descarta en silencio.
+- **Dañados:** la búsqueda lleva `autos.schaden_s:nein` ("Unbeschädigtes Fahrzeug"; `ja` = "Beschädigtes Fahrzeug"). Los nombres que se probaron a ciegas (`fahrzeugzustand_s`, `damaged_b`...) se ignoran en silencio: los filtros reales salen de los enlaces de la propia página de búsqueda. El detalle trae `Fahrzeugzustand: "ja"` y se usa como red de seguridad. `python -m app.maintenance purge-damaged [--dry-run]` (desde `backend/`) quita de la base los dañados guardados antes de tener el filtro, respetando los que tienen seguimiento.
 - Marca: `autos.marke_s:<slug>` (`mercedes_benz`, `bmw`, `audi`, `volkswagen`, `porsche`). Con `k0` en la ruta, `preis:` se interpreta como texto de búsqueda; solo se usa `k0` si hay Modell.
 - La lista no trae Getriebe, combustible, TÜV ni Klimaanlage: salen del bloque JSON de la página de detalle, que solo se pide para anuncios nuevos.
 - Un anuncio retirado devuelve HTTP 200 pero redirige a la lista: se detecta porque la URL final ya no contiene `/s-anzeige/`.
