@@ -211,7 +211,13 @@ class AutoScout24Scraper(Scraper):
                 n = 1
                 try:
                     for n in range(1, MAX_PAGES + 1):
-                        props, _ = await retry(lambda: self._props(page, build_url(params, marke, n)))
+                        async def fetch(n=n, marke=marke):
+                            props, _ = await self._props(page, build_url(params, marke, n))
+                            if "pageQuery" not in props:  # sin conexión, bloqueo o página a medio cargar: se reintenta
+                                raise PlaywrightError("la página no trajo datos (__NEXT_DATA__)")
+                            return props
+
+                        props = await retry(fetch)
                         if n == 1 and not location_ok(params["ort_oder_plz"], props):
                             raise ValueError(
                                 f"Ort oder PLZ no reconocido por AutoScout24: {params['ort_oder_plz']!r} "

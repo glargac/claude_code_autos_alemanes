@@ -42,8 +42,8 @@ def read_app(db: Session = Depends(get_db)):
 def write_app(body: AppSettings, request: Request, db: Session = Depends(get_db)):
     saved = save_setting(db, "app", body.model_dump())
     scheduler = getattr(request.app.state, "scheduler", None)
-    if scheduler and scheduler.get_job("daily_sync"):
-        scheduler.reschedule_job("daily_sync", trigger="cron", hour=saved["sync_hour"])
+    if scheduler:
+        sync_service.apply_schedule(scheduler, saved)
     return saved
 
 

@@ -7,7 +7,7 @@ class Env(BaseSettings):
     database_url: str = "sqlite:///./data/autos.db"
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-5-5"
-    sync_hour: int = 7
+    sync_hour: int = 5
 
 
 env = Env()
@@ -30,7 +30,8 @@ DEFAULT_SEARCH = {
 
 # Sincronización (editable desde la UI).
 DEFAULT_APP = {
-    "sync_hour": env.sync_hour,  # hora de la sync diaria (0-23)
+    "daily_sync": False,  # sync programada: pensada para cuando la app esté en un servidor siempre encendido
+    "sync_hour": env.sync_hour,  # hora de esa sync diaria (0-23)
     "auto_sync_on_open": True,  # al abrir la app, sincronizar si los datos están desactualizados
     "max_age_hours": 12,
 }

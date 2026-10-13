@@ -95,6 +95,7 @@ class WeightsSettings(BaseModel):
 
 
 class AppSettings(BaseModel):
+    daily_sync: bool = False
     sync_hour: int = Field(ge=0, le=23)
     auto_sync_on_open: bool
     max_age_hours: int = Field(ge=1, le=168)

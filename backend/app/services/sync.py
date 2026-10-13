@@ -1,5 +1,9 @@
 """Orquestación: scraping -> dedupe (upsert) -> scoring -> comprobación de vigencia."""
 import asyncio
+import os
+import shutil
+import sys
+import time
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -143,10 +147,41 @@ def _utc_now() -> str:
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
 
+async def wait_for_network(host: str = "www.kleinanzeigen.de", timeout: float = 90.0) -> bool:
+    """Espera a que el DNS responda. Tras despertar de un reposo, el Wi-Fi tarda unos segundos en volver y una
+    sync lanzada en ese momento fallaba con ENOTFOUND. Si no hay red al agotar el plazo, sigue igualmente
+    (la sync fallará con un error claro)."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            await asyncio.get_running_loop().getaddrinfo(host, 443)
+            return True
+        except OSError:
+            if time.monotonic() >= deadline:
+                return False
+            await asyncio.sleep(5)
+
+
+async def _keep_awake():
+    """En macOS impide el reposo del sistema mientras dura la sync (`caffeinate`). Se detiene al terminar o si
+    muere el backend. No evita el reposo por cerrar la tapa del portátil."""
+    if sys.platform != "darwin" or not shutil.which("caffeinate"):
+        return None
+    try:
+        return await asyncio.create_subprocess_exec(
+            "caffeinate", "-i", "-s", "-w", str(os.getpid()),
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )
+    except OSError:
+        return None
+
+
 async def _run_in_background() -> None:
     from ..database import SessionLocal
 
+    awake = await _keep_awake()
     try:
+        await wait_for_network()
         with SessionLocal() as db:
             result = await run_sync(db, _progress)
             # La hora de "última sync" solo avanza si al menos una fuente funcionó; si no, la sync al abrir
@@ -155,7 +190,7 @@ async def _run_in_background() -> None:
             now = _utc_now()
             sources = {k: dict(v) for k, v in meta.get("sources", {}).items()}
             for name, ok in result["fuentes"].items():
-                entry = sources.setdefault(name, {"last_sync_at": None, "error": None})
+                entry = sources.setdefault(name, {"last_sync_at": meta.get("last_sync_at"), "error": None})  # hereda la hora global previa
                 if ok:
                     entry.update(last_sync_at=now, error=None)
                 else:  # la hora de la última sync buena de esa fuente NO avanza
@@ -169,6 +204,8 @@ async def _run_in_background() -> None:
     except Exception as exc:  # se muestra en la UI
         sync_state["error"] = f"{type(exc).__name__}: {exc}"
     finally:
+        if awake and awake.returncode is None:
+            awake.terminate()
         sync_state["running"] = False
         sync_state["progress"] = None
 
@@ -208,3 +245,25 @@ def start_if_stale(db: Session) -> bool:
     now = datetime.utcnow()
     stale = any((last := _last_sync(db, s.name)) is None or now - last > limit for s in SCRAPERS)
     return bool(app["auto_sync_on_open"] and stale and start_sync())
+
+
+async def scheduled_sync() -> None:
+    """Trabajo del planificador (solo si la sync diaria está activada)."""
+    start_sync()
+
+
+def apply_schedule(scheduler, app_settings: dict) -> None:
+    """Deja el planificador acorde a los ajustes: añade, reprograma o quita la sync diaria."""
+    job = scheduler.get_job("daily_sync")
+    if not app_settings["daily_sync"]:
+        if job:
+            scheduler.remove_job("daily_sync")
+        return
+    if job:
+        scheduler.reschedule_job("daily_sync", trigger="cron", hour=app_settings["sync_hour"])
+    else:
+        # Si el backend estaba ocupado o parado a la hora exacta, aún dispara hasta 1 h tarde.
+        scheduler.add_job(
+            scheduled_sync, "cron", hour=app_settings["sync_hour"], id="daily_sync", misfire_grace_time=3600, coalesce=True
+        )
+

@@ -45,7 +45,7 @@ scripts/abrir.command           # doble clic: abre la app (arranca el backend si
 scripts/desinstalar-agente.sh   # quita el agente (no toca la base de datos)
 ```
 
-Registro del backend: `~/Library/Logs/autos-alemanes.log`. La sync diaria solo se ejecuta si el Mac está despierto a esa hora; si no, la sync al abrir cubre el hueco. Tras cambiar el código hay que reiniciarlo: `launchctl kickstart -k gui/$(id -u)/com.autos-alemanes.costa-del-sol`.
+Registro del backend: `~/Library/Logs/autos-alemanes.log`. La lista se sincroniza **al abrir la app** (si los datos tienen más de X horas, ajustable) o con el botón **Sincronizar**. Hay además una sync diaria programada, **desactivada por defecto** (Ajustes), pensada para cuando la app esté en un servidor siempre encendido: en un Mac que se duerme no se ejecutaría. Durante una sync el backend espera a que haya red y mantiene el Mac despierto (`caffeinate`). Tras cambiar el código hay que reiniciarlo: `launchctl kickstart -k gui/$(id -u)/com.autos-alemanes.costa-del-sol`.
 
 Para desarrollar con recarga en caliente, usa los dos comandos de arriba (backend en :8000 y Vite en :5173) con el agente desinstalado.
 

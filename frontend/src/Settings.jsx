@@ -168,11 +168,8 @@ export default function Settings({ onSaved, onRun, syncRunning }) {
         </div>
       </Card>
 
-      <Card title="Sincronización" hint="Cuándo se actualiza la lista de anuncios desde la fuente.">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Sync diaria a las (hora, 0-23)">
-            <input type="number" min="0" max="23" className={input} value={app.sync_hour} onChange={(e) => setA("sync_hour", e.target.value === "" ? "" : Number(e.target.value))} />
-          </Field>
+      <Card title="Sincronización" hint="La lista se actualiza al abrir la app (si los datos están desactualizados) o con el botón Sincronizar.">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Al abrir la app">
             <label className="flex items-center gap-2 py-2 text-sm">
               <input type="checkbox" checked={app.auto_sync_on_open} onChange={(e) => setA("auto_sync_on_open", e.target.checked)} />
@@ -183,7 +180,18 @@ export default function Settings({ onSaved, onRun, syncRunning }) {
             <input type="number" min="1" max="168" disabled={!app.auto_sync_on_open} className={`${input} disabled:opacity-40`} value={app.max_age_hours} onChange={(e) => setA("max_age_hours", e.target.value === "" ? "" : Number(e.target.value))} />
           </Field>
         </div>
-        <p className="text-xs text-slate-500">La sync diaria solo se ejecuta si la aplicación está abierta a esa hora.</p>
+        <div className="grid gap-4 border-t border-slate-800 pt-4 sm:grid-cols-2">
+          <Field label="Sync diaria programada">
+            <label className="flex items-center gap-2 py-2 text-sm">
+              <input type="checkbox" checked={app.daily_sync} onChange={(e) => setA("daily_sync", e.target.checked)} />
+              Activar (para cuando la app esté en un servidor)
+            </label>
+          </Field>
+          <Field label="Hora de la sync diaria (0-23)">
+            <input type="number" min="0" max="23" disabled={!app.daily_sync} className={`${input} disabled:opacity-40`} value={app.sync_hour} onChange={(e) => setA("sync_hour", e.target.value === "" ? "" : Number(e.target.value))} />
+          </Field>
+        </div>
+        <p className="text-xs text-slate-500">En un Mac que se duerme, la sync programada no se ejecuta; por eso viene desactivada.</p>
       </Card>
 
       <div className="flex flex-wrap items-center gap-3">

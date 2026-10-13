@@ -12,11 +12,7 @@ from .routers import cars, settings
 from .services.dedupe import apply_duplicates
 from .services.scope import purge_out_of_scope
 from .services.settings_store import get_setting
-from .services.sync import start_sync
-
-
-async def daily_sync():
-    start_sync()
+from .services.sync import apply_schedule
 
 
 @asynccontextmanager
@@ -26,10 +22,9 @@ async def lifespan(app: FastAPI):
     with SessionLocal() as db:
         purge_out_of_scope(db, {f.casefold() for f in get_setting(db, "search")["kraftstoffart"]})
         apply_duplicates(db)  # barato (~1 s) y mantiene la marca coherente con los datos
-        hour = get_setting(db, "app")["sync_hour"]
+        app_settings = get_setting(db, "app")
     scheduler = AsyncIOScheduler()
-    # Si el backend estaba ocupado/parado a la hora exacta, aún dispara hasta 1 h tarde.
-    scheduler.add_job(daily_sync, "cron", hour=hour, id="daily_sync", misfire_grace_time=3600, coalesce=True)
+    apply_schedule(scheduler, app_settings)  # solo si la sync diaria está activada
     scheduler.start()
     app.state.scheduler = scheduler
     yield
