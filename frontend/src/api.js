@@ -19,6 +19,8 @@ export const api = {
     const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v !== "" && v != null));
     return req(`/cars?${qs}`);
   },
+  car: (id) => req(`/cars/${id}`),
+  analyzeProfitability: (id) => req(`/cars/${id}/rentabilidad`, { method: "POST" }),
   updateCar: (id, body) => req(`/cars/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   getSetting: (key) => req(`/settings/${key}`),
   saveSetting: (key, value) => req(`/settings/${key}`, { method: "PUT", body: JSON.stringify(value) }),

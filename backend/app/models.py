@@ -51,6 +51,8 @@ class Car(Base):
 
     aktiv: Mapped[bool] = mapped_column(default=True, index=True)  # False = Verkauft / Inaktiv
     # Si es el mismo coche que otro anuncio (otro portal o repetido): id de la fila principal. Ver services/dedupe.py
+    # Informe de "Analizar rentabilidad" (bajo demanda): estado, mercado en España, cálculo de margen e informe de IA
+    rentabilidad: Mapped[dict | None] = mapped_column(JSON)
     duplicado_de: Mapped[int | None] = mapped_column(Integer, index=True)
     erstmals_gesehen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     zuletzt_gesehen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -63,3 +65,14 @@ class Setting(Base):
 
     key: Mapped[str] = mapped_column(String(50), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON)
+
+
+class MercadoCache(Base):
+    """Precios de mercado en España ya consultados (se reutilizan entre coches parecidos y entre días)."""
+
+    __tablename__ = "mercado_cache"
+
+    key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSON)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+

@@ -45,6 +45,7 @@ class CarOut(BaseModel):
     aktiv: bool
     farbe: str = "gris"
     otros_enlaces: list[OtroEnlace] = []
+    rentabilidad: dict | None = None
 
 
 class CarUpdate(BaseModel):
@@ -81,7 +82,7 @@ class WeightsSettings(BaseModel):
     tuev: float = Field(ge=0, le=1)
     cabrio_saison: float = Field(ge=0, le=1)
     precio: float = Field(ge=0, le=1)
-    llm_rentabilidad: float = Field(ge=0, le=1)
+    getriebe: float = Field(ge=0, le=1)
     umbral_verde: float = Field(ge=0, le=10)
     umbral_amarillo: float = Field(ge=0, le=10)
 
@@ -89,7 +90,7 @@ class WeightsSettings(BaseModel):
     def thresholds_ordered(self):
         if self.umbral_amarillo >= self.umbral_verde:
             raise ValueError("umbral_amarillo debe ser menor que umbral_verde")
-        if self.kilometer + self.klimaanlage + self.tuev + self.cabrio_saison + self.precio + self.llm_rentabilidad <= 0:
+        if self.kilometer + self.klimaanlage + self.tuev + self.cabrio_saison + self.precio + self.getriebe <= 0:
             raise ValueError("al menos un peso debe ser mayor que 0")
         return self
 
@@ -99,3 +100,30 @@ class AppSettings(BaseModel):
     sync_hour: int = Field(ge=0, le=23)
     auto_sync_on_open: bool
     max_age_hours: int = Field(ge=1, le=168)
+
+
+class RentabilidadSettings(BaseModel):
+    perfil: Literal["particular", "empresa"]
+    descuento_venta_pct: float = Field(ge=0, le=50)
+    descuento_compra_pct: float = Field(ge=0, le=50)
+    transporte: float = Field(ge=0)
+    gestoria_matriculacion: float = Field(ge=0)
+    impuesto_matriculacion_pct: float = Field(ge=0, le=30)
+    preparacion: float = Field(ge=0)
+    seguro_y_placas_transito: float = Field(ge=0)
+    gastos_venta: float = Field(ge=0)
+    otros_costes: float = Field(ge=0)
+    iva_es_pct: float = Field(ge=0, le=40)
+    iva_de_pct: float = Field(ge=0, le=40)
+    iva_reventa: Literal["rebu", "general"]
+    compra_con_iva_deducible: bool
+    margen_comprar_eur: float
+    roi_comprar_pct: float
+    margen_dudoso_eur: float
+
+    @model_validator(mode="after")
+    def umbrales_ordenados(self):
+        if self.margen_dudoso_eur > self.margen_comprar_eur:
+            raise ValueError("margen_dudoso_eur no puede ser mayor que margen_comprar_eur")
+        return self
+

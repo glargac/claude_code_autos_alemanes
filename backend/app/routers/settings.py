@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..schemas import AppSettings, SearchSettings, WeightsSettings
+from ..schemas import AppSettings, RentabilidadSettings, SearchSettings, WeightsSettings
 from ..services import sync as sync_service
 from ..services.settings_store import get_setting, save_setting
 
@@ -31,6 +31,16 @@ def write_weights(body: WeightsSettings, db: Session = Depends(get_db)):
     saved = save_setting(db, "weights", body.model_dump())
     sync_service.rescore_all(db)
     return saved
+
+
+@router.get("/settings/rentabilidad")
+def read_rentabilidad(db: Session = Depends(get_db)):
+    return get_setting(db, "rentabilidad")
+
+
+@router.put("/settings/rentabilidad")
+def write_rentabilidad(body: RentabilidadSettings, db: Session = Depends(get_db)):
+    return save_setting(db, "rentabilidad", body.model_dump())
 
 
 @router.get("/settings/app")

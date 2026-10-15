@@ -10,7 +10,7 @@ const WEIGHT_FIELDS = [
   ["tuev", "TÜV", "Vigencia de la ITV alemana"],
   ["precio", "Precio", "Más barato de lo esperado para su modelo, año y km = más puntos"],
   ["cabrio_saison", "Cabrio / estación", "Descapotables puntúan más en primavera-verano"],
-  ["llm_rentabilidad", "Rentabilidad (LLM)", "Margen y demanda en la Costa del Sol"],
+  ["getriebe", "Cambio automático", "El automático se vende más en la Costa del Sol"],
 ];
 
 const input =
@@ -53,12 +53,14 @@ export default function Settings({ onSaved, onRun, syncRunning }) {
   const [search, setSearch] = useState(null);
   const [weights, setWeights] = useState(null);
   const [app, setApp] = useState(null);
+  const [rent, setRent] = useState(null);
   const [msg, setMsg] = useState(null); // {ok, text}
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.getSetting("search"), api.getSetting("weights"), api.getSetting("app")])
-      .then(([s, w, a]) => {
+    Promise.all([api.getSetting("search"), api.getSetting("weights"), api.getSetting("app"), api.getSetting("rentabilidad")])
+      .then(([s, w, a, r]) => {
+        setRent(r);
         setSearch(s);
         setWeights(w);
         setApp(a);
@@ -66,12 +68,14 @@ export default function Settings({ onSaved, onRun, syncRunning }) {
       .catch((e) => setMsg({ ok: false, text: e.message }));
   }, []);
 
-  if (!search || !weights || !app) return <p className="text-slate-400">{msg ? msg.text : "Cargando…"}</p>;
+  if (!search || !weights || !app || !rent) return <p className="text-slate-400">{msg ? msg.text : "Cargando…"}</p>;
 
   const setS = (k, v) => setSearch((s) => ({ ...s, [k]: v }));
   const setNum = (k, v) => setS(k, v === "" ? "" : Number(v));
   const toggle = (k, item) =>
     setS(k, search[k].includes(item) ? search[k].filter((x) => x !== item) : [...search[k], item]);
+  const setR = (k, v) => setRent((r) => ({ ...r, [k]: v }));
+  const setRNum = (k, v) => setR(k, v === "" ? "" : Number(v));
   const setA = (k, v) => setApp((a) => ({ ...a, [k]: v }));
   const setW = (k, v) => setWeights((w) => ({ ...w, [k]: v === "" ? "" : Number(v) }));
 
@@ -84,6 +88,7 @@ export default function Settings({ onSaved, onRun, syncRunning }) {
       setSearch(await api.saveSetting("search", search));
       setWeights(await api.saveSetting("weights", weights));
       setApp(await api.saveSetting("app", app));
+      setRent(await api.saveSetting("rentabilidad", rent));
       if (run) {
         await onRun();
       } else {
@@ -166,6 +171,88 @@ export default function Settings({ onSaved, onRun, syncRunning }) {
             <input type="number" step="0.1" min="0" max="10" className={input} value={weights.umbral_amarillo} onChange={(e) => setW("umbral_amarillo", e.target.value)} />
           </Field>
         </div>
+      </Card>
+
+      <Card
+        title="Rentabilidad: costes de importación"
+        hint="Para el botón «Analizar rentabilidad». Cifras aproximadas y editables; el margen = venta esperada en España − compra − todos estos costes."
+      >
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Importas como">
+            <select className={input} value={rent.perfil} onChange={(e) => setR("perfil", e.target.value)}>
+              <option value="particular">Particular</option>
+              <option value="empresa">Empresa</option>
+            </select>
+          </Field>
+          <Field label="Descuento sobre el anuncio al vender en España (%)">
+            <input type="number" step="0.5" min="0" className={input} value={rent.descuento_venta_pct} onChange={(e) => setRNum("descuento_venta_pct", e.target.value)} />
+          </Field>
+          <Field label="Negociación a la baja en la compra (%)">
+            <input type="number" step="0.5" min="0" className={input} value={rent.descuento_compra_pct} onChange={(e) => setRNum("descuento_compra_pct", e.target.value)} />
+          </Field>
+          <Field label="Transporte a la Costa del Sol (€)">
+            <input type="number" step="50" min="0" className={input} value={rent.transporte} onChange={(e) => setRNum("transporte", e.target.value)} />
+          </Field>
+          <Field label="Gestoría, tasa DGT, ITV de importación, placas (€)">
+            <input type="number" step="50" min="0" className={input} value={rent.gestoria_matriculacion} onChange={(e) => setRNum("gestoria_matriculacion", e.target.value)} />
+          </Field>
+          <Field label="Impuesto de matriculación (% de la compra)">
+            <input type="number" step="0.25" min="0" className={input} value={rent.impuesto_matriculacion_pct} onChange={(e) => setRNum("impuesto_matriculacion_pct", e.target.value)} />
+          </Field>
+          <Field label="Preparación y pequeñas reparaciones (€)">
+            <input type="number" step="50" min="0" className={input} value={rent.preparacion} onChange={(e) => setRNum("preparacion", e.target.value)} />
+          </Field>
+          <Field label="Seguro y placas de tránsito (€)">
+            <input type="number" step="50" min="0" className={input} value={rent.seguro_y_placas_transito} onChange={(e) => setRNum("seguro_y_placas_transito", e.target.value)} />
+          </Field>
+          <Field label="Gastos de venta: anuncios (€)">
+            <input type="number" step="50" min="0" className={input} value={rent.gastos_venta} onChange={(e) => setRNum("gastos_venta", e.target.value)} />
+          </Field>
+          <Field label="Otros costes (€)">
+            <input type="number" step="50" min="0" className={input} value={rent.otros_costes} onChange={(e) => setRNum("otros_costes", e.target.value)} />
+          </Field>
+        </div>
+        <p className="text-xs text-slate-500">
+          Matriculación según emisiones de CO₂ (orientativo): menos de 120 g/km → 0 %; 120-159 → 4,75 %; 160-199 → 9,75 %; 200 o más → 14,75 %.
+        </p>
+
+        {rent.perfil === "empresa" && (
+          <div className="grid gap-4 border-t border-slate-800 pt-4 sm:grid-cols-3">
+            <Field label="IVA en la reventa">
+              <select className={input} value={rent.iva_reventa} onChange={(e) => setR("iva_reventa", e.target.value)}>
+                <option value="rebu">REBU: IVA solo sobre el margen</option>
+                <option value="general">Régimen general: IVA sobre el precio</option>
+              </select>
+            </Field>
+            <Field label="Compra en Alemania">
+              <label className="flex items-center gap-2 py-2 text-sm">
+                <input type="checkbox" checked={rent.compra_con_iva_deducible} onChange={(e) => setR("compra_con_iva_deducible", e.target.checked)} />
+                A un profesional, con IVA deducible
+              </label>
+            </Field>
+            <Field label="IVA España / Alemania (%)">
+              <div className="flex items-center gap-2">
+                <input type="number" step="1" min="0" className={input} value={rent.iva_es_pct} onChange={(e) => setRNum("iva_es_pct", e.target.value)} />
+                <input type="number" step="1" min="0" className={input} value={rent.iva_de_pct} onChange={(e) => setRNum("iva_de_pct", e.target.value)} />
+              </div>
+            </Field>
+          </div>
+        )}
+
+        <div className="grid gap-4 border-t border-slate-800 pt-4 sm:grid-cols-3">
+          <Field label="«Comprar» si el margen neto es al menos (€)">
+            <input type="number" step="100" className={input} value={rent.margen_comprar_eur} onChange={(e) => setRNum("margen_comprar_eur", e.target.value)} />
+          </Field>
+          <Field label="…y la rentabilidad sobre lo invertido (%)">
+            <input type="number" step="1" className={input} value={rent.roi_comprar_pct} onChange={(e) => setRNum("roi_comprar_pct", e.target.value)} />
+          </Field>
+          <Field label="«Descartar» si el margen es menor que (€)">
+            <input type="number" step="100" className={input} value={rent.margen_dudoso_eur} onChange={(e) => setRNum("margen_dudoso_eur", e.target.value)} />
+          </Field>
+        </div>
+        <p className="text-xs text-slate-500">
+          Estimación orientativa, no es asesoramiento fiscal. No incluye IRPF / Impuesto de Sociedades, ITP del comprador ni imprevistos.
+        </p>
       </Card>
 
       <Card title="Sincronización" hint="La lista se actualiza al abrir la app (si los datos están desactualizados) o con el botón Sincronizar.">

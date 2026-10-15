@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "./api.js";
+import { Informe, RentabilidadBadge, RentabilidadButton } from "./Rentabilidad.jsx";
 
 const SCORE_COLORS = {
   verde: "bg-green-500",
@@ -30,7 +31,7 @@ const DETAIL_LABELS = {
   tuev: "TÜV",
   cabrio_saison: "Cabrio",
   precio: "Precio",
-  llm_rentabilidad: "Rentabilidad",
+  getriebe: "Cambio",
 };
 
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) : null);
@@ -122,6 +123,7 @@ function Crm({ car, onChange }) {
 
 export default function CarCard({ car, onChange }) {
   const [open, setOpen] = useState(false);
+  const [informe, setInforme] = useState(false);
   const ring =
     car.status === "Kaufoption"
       ? "ring-2 ring-green-500"
@@ -147,14 +149,14 @@ export default function CarCard({ car, onChange }) {
               {SOURCE_LABEL[car.source] ?? car.source}
             </span>
             {!car.aktiv && <span className="rounded-full bg-slate-600 px-2 py-0.5 text-xs">Verkauft / Inaktiv</span>}
+            <RentabilidadBadge r={car.rentabilidad} />
           </div>
           <p className="text-sm text-slate-400">
             {car.erstzulassung} · {car.kilometer?.toLocaleString("de-DE")} km · {car.preis?.toLocaleString("de-DE")} € · TÜV {car.tuev_bis ?? "?"}
             {car.getriebe && ` · ${car.getriebe}`}
             {published && ` · publicado ${published}`}
           </p>
-          {car.llm_analyse && <p className="mt-1 text-sm">{car.llm_analyse}</p>}
-          <div className="mt-2 flex items-center gap-4 text-sm">
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
             <a href={car.url} target="_blank" rel="noreferrer" className="text-sky-400">
               Ver en {SOURCE_LABEL[car.source] ?? car.source} ↗
             </a>
@@ -167,6 +169,12 @@ export default function CarCard({ car, onChange }) {
             <button onClick={() => setOpen(!open)} className="text-slate-400 hover:text-white">
               {open ? "Cerrar seguimiento" : car.notizen ? "Seguimiento · con notas" : "Seguimiento"}
             </button>
+            <RentabilidadButton car={car} onChange={onChange} onFinished={() => setInforme(true)} />
+            {car.rentabilidad && car.rentabilidad.estado !== "calculando" && (
+              <button onClick={() => setInforme(!informe)} className="text-slate-400 hover:text-white">
+                {informe ? "Ocultar informe" : "Ver informe"}
+              </button>
+            )}
           </div>
         </div>
         <div className="shrink-0 text-center">
@@ -175,6 +183,8 @@ export default function CarCard({ car, onChange }) {
           </div>
         </div>
       </div>
+
+      {informe && car.rentabilidad && <Informe r={car.rentabilidad} />}
 
       {open && (
         <>

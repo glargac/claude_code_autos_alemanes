@@ -1,8 +1,7 @@
-"""Scoring 1-10: componentes deterministas + rentabilidad estimada por LLM.
+"""Score 1-10 simple y determinista (sin LLM: no gasta tokens al sincronizar).
 
-Cada componente devuelve 0-10; el score final es la media ponderada por los pesos
-configurables (config.DEFAULT_WEIGHTS). Si no hay análisis LLM, su peso se
-redistribuye entre los componentes deterministas.
+Cada componente devuelve 0-10; el score final es la media ponderada por los pesos configurables
+(config.DEFAULT_WEIGHTS). El análisis de rentabilidad con LLM es una función aparte, bajo demanda.
 """
 import math
 import re
@@ -125,19 +124,20 @@ def score_precio(price: int | None, reference: float | None) -> float:
     return max(1.0, 5.0 - 4.0 * (ratio - 1) / (EXPENSIVE_RATIO - 1))
 
 
-def compute_score(
-    car: Car, weights: dict, search: dict, llm_score: float | None, market: MarketIndex | None = None
-) -> tuple[float, dict]:
+def score_getriebe(getriebe: str | None) -> float:
+    """El cambio automático se vende más en la Costa del Sol. Sin dato: neutro."""
+    return {"automatik": 10.0, "manuell": 4.0}.get((getriebe or "").lower(), 5.0)
+
+
+def compute_score(car: Car, weights: dict, search: dict, market: MarketIndex | None = None) -> tuple[float, dict]:
     parts = {
         "kilometer": score_kilometer(car.kilometer, search["kilometer_ab"], search["kilometer_bis"]),
         "klimaanlage": 10.0 if car.klimaanlage else 2.0,
         "tuev": score_tuev(car.tuev_bis),
         "cabrio_saison": score_cabrio(car.cabrio),
         "precio": score_precio(car.preis, market.reference(car) if market else None),
+        "getriebe": score_getriebe(car.getriebe),
     }
-    if llm_score is not None:
-        parts["llm_rentabilidad"] = llm_score
-
     total_w = sum(weights[k] for k in parts) or 1.0
     score = sum(parts[k] * weights[k] for k in parts) / total_w
     return round(score, 1), {k: round(v, 1) for k, v in parts.items()}

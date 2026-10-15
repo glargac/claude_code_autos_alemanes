@@ -14,7 +14,6 @@ from ..scrapers.base import Scraper
 from ..scrapers.kleinanzeigen import KleinanzeigenScraper
 from ..scrapers.autoscout24 import AutoScout24Scraper
 from .dedupe import apply_duplicates
-from .llm import analyze_prompt, build_prompt, enabled as llm_enabled
 from .scope import out_of_scope, purge_out_of_scope
 from .scoring import MarketIndex, compute_score
 from .settings_store import get_setting, save_setting
@@ -22,15 +21,8 @@ from .settings_store import get_setting, save_setting
 SCRAPERS: list[Scraper] = [KleinanzeigenScraper(), AutoScout24Scraper()]
 
 
-async def rescore(car: Car, weights: dict, search: dict, market: MarketIndex) -> None:
-    """Recalcula el score. El LLM solo se consulta si el coche aún no tiene análisis (coste: una
-    llamada por coche, una sola vez); en el resto se reutiliza la nota guardada."""
-    llm_score = (car.score_detail or {}).get("llm_rentabilidad")
-    if llm_enabled() and (car.llm_analyse is None or llm_score is None):
-        score, analyse = await asyncio.to_thread(analyze_prompt, build_prompt(car))
-        if analyse:
-            car.llm_analyse, llm_score = analyse, score
-    car.score, car.score_detail = compute_score(car, weights, search, llm_score, market)
+def rescore(car: Car, weights: dict, search: dict, market: MarketIndex) -> None:
+    car.score, car.score_detail = compute_score(car, weights, search, market)
 
 
 async def run_sync(db: Session, progress=None) -> dict:
@@ -75,7 +67,7 @@ async def run_sync(db: Session, progress=None) -> dict:
                         else:
                             car = Car(**{"marke": "", "modell": "", **data}, erstmals_gesehen=now, zuletzt_gesehen=now)
                             db.add(car)
-                        await rescore(car, weights, search, market)
+                        rescore(car, weights, search, market)
                 except Exception as exc:
                     fehler.append(f"{scraper.name} (aviso): se omitió el anuncio {item.external_id}: {type(exc).__name__}: {str(exc)[:120]}")
                     continue
@@ -115,13 +107,12 @@ async def run_sync(db: Session, progress=None) -> dict:
 
 
 def rescore_all(db: Session) -> int:
-    """Recalcula scores con los pesos/rangos actuales reutilizando la nota LLM guardada (sin llamar al LLM)."""
+    """Recalcula todos los scores con los pesos y rangos actuales."""
     search, weights = get_setting(db, "search"), get_setting(db, "weights")
     cars = db.scalars(select(Car)).all()
     market = MarketIndex(c for c in cars if c.aktiv and c.duplicado_de is None)  # un coche repetido cuenta una vez
     for car in cars:
-        llm = (car.score_detail or {}).get("llm_rentabilidad")
-        car.score, car.score_detail = compute_score(car, weights, search, llm, market)
+        car.score, car.score_detail = compute_score(car, weights, search, market)
     db.commit()
     return len(cars)
 

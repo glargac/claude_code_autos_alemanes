@@ -36,14 +36,35 @@ DEFAULT_APP = {
     "max_age_hours": 12,
 }
 
-# Pesos del scoring (editables desde la UI). Los pesos deterministas + LLM suman 1.0.
+# Rentabilidad (análisis bajo demanda). Cifras APROXIMADAS y editables en Ajustes; no son asesoramiento fiscal.
+DEFAULT_RENTABILIDAD = {
+    "perfil": "particular",  # particular | empresa
+    "descuento_venta_pct": 6.0,  # el precio de ANUNCIO en España no es el de venta final
+    "descuento_compra_pct": 0.0,  # negociación a la baja del precio pedido en Alemania
+    "transporte": 800,  # Alemania -> Costa del Sol
+    "gestoria_matriculacion": 450,  # gestoría, tasa DGT, ITV de importación, ficha reducida, placas
+    "impuesto_matriculacion_pct": 4.75,  # sobre el precio de compra; tramos por CO2: <120 g/km 0 %, 120-159 4,75 %, 160-199 9,75 %, >=200 14,75 %
+    "preparacion": 400,  # limpieza, revisión, neumáticos, pequeñas reparaciones
+    "seguro_y_placas_transito": 150,
+    "gastos_venta": 150,  # anuncios, portales
+    "otros_costes": 0,
+    "iva_es_pct": 21.0,
+    "iva_de_pct": 19.0,
+    "iva_reventa": "rebu",  # solo empresa: rebu (IVA sobre el margen) | general (IVA sobre el precio de venta)
+    "compra_con_iva_deducible": False,  # solo empresa: comprado a un profesional alemán con IVA desglosado
+    "margen_comprar_eur": 1500,  # veredicto numérico: margen neto mínimo para "Comprar"...
+    "roi_comprar_pct": 15,  # ...y rentabilidad mínima sobre lo invertido
+    "margen_dudoso_eur": 700,  # por debajo de esto: "Descartar"
+}
+
+# Pesos del scoring (editables desde la UI; se normalizan, no hace falta que sumen 1).
 DEFAULT_WEIGHTS = {
-    "kilometer": 0.20,
+    "kilometer": 0.25,
     "klimaanlage": 0.10,
-    "tuev": 0.10,
+    "tuev": 0.15,
     "cabrio_saison": 0.05,
-    "precio": 0.20,
-    "llm_rentabilidad": 0.35,
-    "umbral_verde": 8.0,
+    "precio": 0.25,
+    "getriebe": 0.15,  # el automático se vende más en la Costa del Sol
+    "umbral_verde": 7.5,
     "umbral_amarillo": 5.0,
 }
