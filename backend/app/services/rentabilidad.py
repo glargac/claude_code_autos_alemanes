@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 
 from playwright.async_api import Error as PlaywrightError
@@ -98,7 +99,7 @@ def veredicto_numerico(margen: float, roi_pct: float | None, confianza: str, a: 
     return "Dudoso" if margen >= a["margen_dudoso_eur"] else "Descartar"
 
 
-def calcular_margen(precio_de: int, mercado: dict, ajustes: dict) -> dict:
+def calcular_margen(precio_de: int, mercado: dict, ajustes: dict, avisos: list[str] | None = None) -> dict:
     """Margen neto estimado (central, pesimista con P25 y optimista con P75 del mercado español)."""
     ref, ref_fuente = precio_referencia(mercado, ajustes["perfil"])
     escala = ref / mercado["mediana"]  # traslada el rango P25-P75 al precio de referencia elegido
@@ -110,16 +111,59 @@ def calcular_margen(precio_de: int, mercado: dict, ajustes: dict) -> dict:
         "precio_de": precio_de,
         "referencia_es": round(ref),
         "referencia_fuente": ref_fuente,
-        **central,
+        **{k: v for k, v in central.items() if k != "avisos"},
         "margen_pesimista": pesimista["margen_neto"],
         "margen_optimista": optimista["margen_neto"],
         "veredicto_numerico": veredicto_numerico(central["margen_neto"], central["roi_pct"], mercado["confianza"], ajustes),
+        "avisos": (avisos or []) + central["avisos"],  # primero los que afectan a la fiabilidad del cálculo
     }
 
 
 def hash_ajustes(ajustes: dict) -> str:
     """Huella de los ajustes con que se calculó: permite avisar si cambiaron los costes después."""
     return hashlib.sha1(json.dumps(ajustes, sort_keys=True).encode()).hexdigest()[:10]
+
+
+# ---------------------------------------------------------------- coherencia título / modelo
+
+_NO_ES_MODELO = r"(?!\s?(?:ps|kw|hp|km|tkm|kg|cm|tsd|mm)\b)"  # «150 PS», «85 kW»: potencia, no modelo
+_MERCEDES = re.compile(r"(?<!\w)(cl[aks]?|sl[kc]?|ml|gl[acke]?|[abce])\s?-?\s?(\d{2,3})(?!\w)" + _NO_ES_MODELO, re.I)
+_BMW = re.compile(r"(?<!\w)([1-8]\d{2})(?:[a-z]{1,2})?(?!\w)" + _NO_ES_MODELO + r"|(?<!\w)(x[1-7])(?!\w)", re.I)
+_AUDI = re.compile(r"(?<!\w)([aq]\d)(?!\w)", re.I)
+_VARIANTES_GOLF = ("plus", "variant", "sportsvan", "alltrack", "cabrio")  # modelos distintos con otro precio
+
+
+def _designacion(marke: str, texto: str) -> str | None:
+    """Designación de modelo que aparece en un texto (p. ej. «b200», «116», «a3»), según la marca."""
+    if marke == "Mercedes-Benz":
+        m = _MERCEDES.search(texto)
+        return f"{m.group(1)}{m.group(2)}".lower() if m else None
+    if marke == "BMW":
+        m = _BMW.search(texto)
+        return (m.group(1) or m.group(2)).lower() if m else None
+    if marke == "Audi":
+        m = _AUDI.search(texto)
+        return m.group(1).lower() if m else None
+    return None
+
+
+def conflicto_modelo(marke: str, modell: str, titel: str) -> str | None:
+    """Detecta si el título del anuncio contradice el modelo registrado (el campo «Modell» lo elige el vendedor y a
+    veces es erróneo: «B 200 CDI» registrado como «C 200»). Reglas prudentes: solo avisa ante una contradicción
+    clara, no cuando el título es más genérico («A-Klasse» para un «A 160»). Si salta, la comparación de precios
+    en España puede ser de otro modelo y no es fiable."""
+    modelo, titulo = _norm(modell), (titel or "")
+    if not modelo or not titulo:
+        return None
+    en_modelo, en_titulo = _designacion(marke, modell), _designacion(marke, titulo)
+    if en_modelo and en_titulo and en_modelo != en_titulo:
+        return f"El título dice «{en_titulo.upper()}» pero el modelo registrado es «{modell}»: la comparación con España puede ser de otro modelo."
+    if marke == "Volkswagen" and modelo == "golf":  # Golf Plus / Variant / Sportsvan / Cabrio no son un Golf normal
+        palabras = set(re.findall(r"[a-zäöüß]+", titulo.lower()))
+        extra = [v for v in _VARIANTES_GOLF if v in palabras]
+        if extra:
+            return f"El título menciona «Golf {extra[0].title()}» pero el modelo registrado es «Golf»: es otro modelo, con otro precio."
+    return None
 
 
 # ---------------------------------------------------------------- textos para la IA
@@ -145,6 +189,7 @@ def _calculo_txt(c: dict) -> str:
         f"Margen neto estimado: {_eur(c['margen_neto'])} (rango {_eur(c['margen_pesimista'])} a {_eur(c['margen_optimista'])})\n"
         f"Rentabilidad sobre lo invertido: {c['roi_pct']} % | inversión total: {_eur(c['inversion'])}\n"
         f"Veredicto solo por números: {c['veredicto_numerico']}\nDesglose:\n{lineas}"
+        + "".join(f"\nAVISO: {a}" for a in c.get("avisos", []))
     )
 
 
@@ -153,7 +198,7 @@ def _mercado_txt(m: dict, c: dict) -> str:
     return (
         f"{m['n']} anuncios comparables | mediana ajustada: {_eur(m['mediana'])} | rango típico: {_eur(m['p25'])}-{_eur(m['p75'])} | "
         f"mín-máx: {_eur(m['minimo'])}-{_eur(m['maximo'])}{part}\nCriterio de comparación: {m['criterio']} | "
-        f"confianza: {m['confianza']}\nReferencia usada: {_eur(c['referencia_es'])} ({c['referencia_fuente']}; "
+        f"confianza: {m['confianza']}{' (' + m['confianza_motivo'] + ')' if m.get('confianza_motivo') else ''}\nReferencia usada: {_eur(c['referencia_es'])} ({c['referencia_fuente']}; "
         f"son precios de anuncio y se aplica un descuento de venta)"
     )
 
@@ -203,7 +248,10 @@ async def _analizar(car_id: int) -> None:
         try:
             ajustes = get_setting(db, "rentabilidad")
             mercado, de_cache = await _mercado(db, car)
-            calculo = calcular_margen(car.preis, mercado, ajustes)
+            conflicto = conflicto_modelo(car.marke, car.modell, car.titel)
+            if conflicto:  # el mercado es de otro modelo: la confianza baja siempre (la caché no se toca: se copia)
+                mercado = {**mercado, "confianza": "baja", "confianza_motivo": conflicto}
+            calculo = calcular_margen(car.preis, mercado, ajustes, [conflicto] if conflicto else None)
             informe, aviso_ia = None, None
             if llm.enabled():
                 prompt = llm.build_report_prompt(_coche(car), _calculo_txt(calculo), _mercado_txt(mercado, calculo), ajustes["perfil"])

@@ -5,8 +5,13 @@ class Env(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "sqlite:///./data/autos.db"
+    # IA del informe "Analizar rentabilidad". Las claves van SOLO en backend/.env (no se versiona).
+    llm_provider: str = "auto"  # auto (Gemini si hay clave de Gemini, si no Anthropic) | gemini | anthropic
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"  # los nombres cambian: `python -m app.maintenance gemini-models` lista los de tu clave
+    gemini_base_url: str = ""  # solo para pruebas con un servidor falso
     anthropic_api_key: str = ""
-    llm_model: str = "claude-sonnet-5-5"
+    llm_model: str = "claude-sonnet-5-5"  # modelo de Anthropic
     sync_hour: int = 5
 
 

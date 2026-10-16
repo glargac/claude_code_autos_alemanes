@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..schemas import AppSettings, RentabilidadSettings, SearchSettings, WeightsSettings
-from ..services import sync as sync_service
+from ..services import llm, sync as sync_service
 from ..services.settings_store import get_setting, save_setting
 
 router = APIRouter(prefix="/api", tags=["settings"])
@@ -31,6 +31,12 @@ def write_weights(body: WeightsSettings, db: Session = Depends(get_db)):
     saved = save_setting(db, "weights", body.model_dump())
     sync_service.rescore_all(db)
     return saved
+
+
+@router.get("/settings/ia")
+def read_ia():
+    """Estado de la IA del informe (solo lectura; las claves se ponen en backend/.env y nunca salen del servidor)."""
+    return llm.info()
 
 
 @router.get("/settings/rentabilidad")

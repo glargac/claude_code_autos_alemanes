@@ -54,7 +54,7 @@ Para desarrollar con recarga en caliente, usa los dos comandos de arriba (backen
 Hecho:
 - Scrapers de **kleinanzeigen.de** y **AutoScout24** (Playwright): filtros por URL, resolución de Ort/PLZ, detalle del anuncio (Getriebe, Kraftstoffart, TÜV, Klimaanlage), detección de anuncios vendidos. Cada fuente se guarda por separado y un fallo en una no afecta a la otra.
 - Modelo de datos con dedupe (fuente + id), estado activo/inactivo y CRM (Neu → Kontaktiert → Termin vereinbart → Kaufoption / Abgelehnt, con cita y notas).
-- **Analizar rentabilidad** (botón por coche, ~17 s): precios reales en España (AutoScout24.es), margen neto con todos tus costes de importación (editables; perfil particular o empresa, con IVA/REBU) e informe de IA opcional. Solo la IA gasta tokens, y solo en los coches que analizas.
+- **Analizar rentabilidad** (botón por coche, ~17 s): precios reales en España (AutoScout24.es), margen neto con todos tus costes de importación (editables; perfil particular o empresa, con IVA/REBU) e informe de IA opcional (Gemini o Anthropic, según la clave que pongas en `backend/.env`). Solo la IA gasta tokens, y solo en los coches que analizas.
 - Score simple y determinista (km, precio frente a coches comparables, cambio automático, TÜV, Klimaanlage, cabrio/estación), con pesos y umbrales configurables. **No usa LLM: sincronizar no gasta tokens.** Verde desde 7,5.
 - Sincronización en segundo plano con barra de progreso, sync diaria programada y sync al abrir si los datos están desactualizados (configurable en Ajustes).
 - Interfaz: dashboard con filtros, panel de seguimiento y pantalla de ajustes.
@@ -63,5 +63,5 @@ Pendiente: empaquetado de escritorio (Tauri/Electron). mobile.de no está soport
 
 ## Notas
 
-- Los datos viven en `backend/data/autos.db` (no se versiona). La clave del LLM va en `backend/.env` (no se versiona).
+- Los datos viven en `backend/data/autos.db` (no se versiona). Las claves de IA (`GEMINI_API_KEY` o `ANTHROPIC_API_KEY`) van en `backend/.env` (no se versiona). `python -m app.maintenance probar-ia` comprueba la clave y el modelo; `gemini-models` lista los modelos de tu clave.
 - Raspar sitios web puede ir contra sus condiciones de uso: el scraper limita el ritmo (pausas de 1,5–3 s) y el número de páginas por marca. Úsalo bajo tu responsabilidad.

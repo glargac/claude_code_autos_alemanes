@@ -142,6 +142,15 @@ export function Informe({ r }) {
             <Lista titulo="Riesgos" items={ia.riesgos} color="text-red-400" />
             <Lista titulo="Revisar antes de comprar" items={ia.revisar_antes_de_comprar} color="text-sky-400" />
           </div>
+          {ia.uso && (
+            <p className="text-xs text-slate-500">
+              Informe de {ia.uso.proveedor} · {ia.uso.modelo}
+              {ia.uso.tokens_entrada != null &&
+                ` · ${(ia.uso.tokens_entrada + (ia.uso.tokens_salida ?? 0) + (ia.uso.tokens_pensamiento ?? 0)).toLocaleString("de-DE")} tokens` +
+                  ` (${ia.uso.tokens_entrada.toLocaleString("de-DE")} entrada, ${(ia.uso.tokens_salida ?? 0).toLocaleString("de-DE")} salida` +
+                  `${ia.uso.tokens_pensamiento ? `, ${ia.uso.tokens_pensamiento.toLocaleString("de-DE")} razonamiento` : ""})`}
+            </p>
+          )}
         </div>
       )}
       {r.aviso_ia && !ia && <p className="rounded bg-slate-800 px-3 py-2 text-xs text-slate-400">{r.aviso_ia}</p>}
@@ -175,6 +184,7 @@ export function Informe({ r }) {
             {m.n} anuncios · mediana {eur(m.mediana)} (rango {eur(m.p25)}–{eur(m.p75)})
             {m.mediana_particulares ? ` · particulares ${eur(m.mediana_particulares)}` : ""}
           </p>
+          {m.confianza_motivo && <p className="text-xs text-amber-400">{m.confianza_motivo}</p>}
           <p className="text-xs text-slate-500">Criterio: {m.criterio}. Precios de anuncio ajustados a los km y año de este coche.</p>
           <ul className="mt-2 space-y-1 text-xs">
             {m.muestra.map((s) => (

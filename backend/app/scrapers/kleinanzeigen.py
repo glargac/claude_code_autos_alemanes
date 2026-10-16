@@ -28,6 +28,13 @@ UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 )
+# La versión MÓVIL de la página marca con «Gelöscht» las fotos de un anuncio borrado por el vendedor; la de escritorio
+# sigue mostrando el anuncio normal (`adExpired:false`), así que no sirve para detectarlo.
+MOBILE_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+)
+_BORRADO = re.compile(r"badge-unavailable[^>]*>\s*(?:<i[^>]*>\s*</i>\s*)?Gel(?:ö|&ouml;|&#0*246;)scht", re.I)
 MAX_PAGES = 4  # 25 anuncios por página
 RADII = [1, 2, 3, 5, 10, 20, 30, 50, 100, 150, 200]
 BRAND_SLUG = {
@@ -37,6 +44,25 @@ BRAND_SLUG = {
     "Volkswagen": "volkswagen",
     "Porsche": "porsche",
 }
+
+
+def esta_borrado(html: str) -> bool:
+    """¿La página móvil marca el anuncio como «Gelöscht»? Se busca dentro de la galería de fotos del propio anuncio
+    (si la estructura cambiara y no hubiera galería, en toda la página)."""
+    galeria = re.search(r"imagegallery--list.*?</ul>", html, re.S)
+    return bool(_BORRADO.search(galeria.group(0) if galeria else html))
+
+
+def veredicto_pagina(status: int, url_final: str, html: str) -> bool | None:
+    """True = anuncio retirado; False = vigente; None = no concluyente (bloqueo, límite de peticiones, error).
+    Un HTTP de error que no sea 404/410 NO significa que el anuncio haya desaparecido."""
+    if status in (404, 410):
+        return True
+    if status != 200:
+        return None
+    if "/s-anzeige/" not in url_final:  # redirige a la lista de búsqueda
+        return True
+    return esta_borrado(html)
 
 
 def _slug(text: str) -> str:
@@ -161,11 +187,11 @@ class KleinanzeigenScraper(Scraper):
     name = "kleinanzeigen"
 
     @asynccontextmanager
-    async def _context(self):
+    async def _context(self, user_agent: str = UA):
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             try:
-                ctx = await browser.new_context(locale="de-DE", user_agent=UA)
+                ctx = await browser.new_context(locale="de-DE", user_agent=user_agent)
                 ctx.set_default_timeout(60000)  # el equipo puede ir lento (p. ej. tras reposo)
                 yield ctx
             finally:
@@ -275,26 +301,40 @@ class KleinanzeigenScraper(Scraper):
                 await self._pause()
         return ids
 
+    async def _comprobar_http(self, ctx: BrowserContext, url: str) -> bool | None:
+        """Vía rápida (~0,7 s): una petición HTTP con la web móvil. None si no es concluyente (p. ej. HTTP 403)."""
+        try:
+            r = await ctx.request.get(url, headers={"User-Agent": MOBILE_UA}, max_redirects=5, timeout=30000)
+            return veredicto_pagina(r.status, r.url, await r.text() if r.status == 200 else "")
+        except PlaywrightError:
+            return None
+
+    async def _comprobar_pagina(self, page, url: str) -> bool | None:
+        """Respaldo (más lento): cargar la página con el navegador, que no se confunde con un bloqueo."""
+        try:
+            resp = await retry(lambda: page.goto(url, wait_until="domcontentloaded"))
+        except PlaywrightError:
+            return None
+        return veredicto_pagina(resp.status if resp else 0, page.url, await page.content())
+
     async def inactive_urls(self, urls: list[str], progress: Progress | None = None) -> set[str]:
+        """URLs retiradas (borradas, vendidas...). Lo no concluyente se da por vigente y se reintenta en la próxima sync."""
         gone: set[str] = set()
         if not urls:
             return gone
-        async with self._context() as ctx:
-            page = await ctx.new_page()
+        async with self._context(MOBILE_UA) as ctx:
+            page = None
             for i, url in enumerate(urls, 1):
-                try:
-                    r = await retry(lambda: page.goto(url, wait_until="domcontentloaded"))
-                except PlaywrightError:
-                    continue  # no se pudo comprobar: se asume vigente y se reintenta en la próxima sync
-                if not (r and r.status < 400 and "/s-anzeige/" in page.url):
+                retirado = await self._comprobar_http(ctx, url)
+                if retirado is None:
+                    page = page or await ctx.new_page()
+                    retirado = await self._comprobar_pagina(page, url)
+                if retirado:
                     gone.add(url)
                 if progress:
                     progress("verificar", i, len(urls))
-                await self._pause()
+                await asyncio.sleep(random.uniform(0.4, 0.9))
         return gone
 
     async def is_active(self, url: str) -> bool:
-        async with self._context() as ctx:
-            page = await ctx.new_page()
-            r = await page.goto(url, wait_until="domcontentloaded")
-            return bool(r and r.status < 400 and "/s-anzeige/" in page.url)
+        return url not in await self.inactive_urls([url])

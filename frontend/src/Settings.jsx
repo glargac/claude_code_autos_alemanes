@@ -54,10 +54,12 @@ export default function Settings({ onSaved, onRun, syncRunning }) {
   const [weights, setWeights] = useState(null);
   const [app, setApp] = useState(null);
   const [rent, setRent] = useState(null);
+  const [ia, setIa] = useState(null);
   const [msg, setMsg] = useState(null); // {ok, text}
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    api.getSetting("ia").then(setIa).catch(() => {}); // solo informativo
     Promise.all([api.getSetting("search"), api.getSetting("weights"), api.getSetting("app"), api.getSetting("rentabilidad")])
       .then(([s, w, a, r]) => {
         setRent(r);
@@ -212,6 +214,11 @@ export default function Settings({ onSaved, onRun, syncRunning }) {
             <input type="number" step="50" min="0" className={input} value={rent.otros_costes} onChange={(e) => setRNum("otros_costes", e.target.value)} />
           </Field>
         </div>
+        <p className={`rounded-lg px-3 py-2 text-xs ${ia?.activa ? "bg-green-950 text-green-300" : "bg-slate-800 text-slate-400"}`}>
+          {ia?.activa
+            ? `Informe de IA activado: ${ia.proveedor} · ${ia.modelo}.`
+            : "Informe de IA desactivado: pon GEMINI_API_KEY (o ANTHROPIC_API_KEY) en backend/.env y reinicia el backend. Sin clave, «Analizar rentabilidad» muestra el cálculo sin informe de texto."}
+        </p>
         <p className="text-xs text-slate-500">
           Matriculación según emisiones de CO₂ (orientativo): menos de 120 g/km → 0 %; 120-159 → 4,75 %; 160-199 → 9,75 %; 200 o más → 14,75 %.
         </p>
