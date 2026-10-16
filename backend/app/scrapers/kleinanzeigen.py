@@ -34,7 +34,10 @@ MOBILE_UA = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
     "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 )
-_BORRADO = re.compile(r"badge-unavailable[^>]*>\s*(?:<i[^>]*>\s*</i>\s*)?Gel(?:ö|&ouml;|&#0*246;)scht", re.I)
+# Insignia sobre las fotos del anuncio: «Gelöscht» (borrado) o «Reserviert» (reservado; ya casi vendido).
+_NO_DISPONIBLE = re.compile(
+    r'badge-unavailable[^>]*>\s*(?:<i[^>]*>\s*</i>\s*)?(Gel(?:ö|&ouml;|&#0*246;)scht|Reserviert)', re.I
+)
 MAX_PAGES = 4  # 25 anuncios por página
 RADII = [1, 2, 3, 5, 10, 20, 30, 50, 100, 150, 200]
 BRAND_SLUG = {
@@ -46,15 +49,23 @@ BRAND_SLUG = {
 }
 
 
-def esta_borrado(html: str) -> bool:
-    """¿La página móvil marca el anuncio como «Gelöscht»? Se busca dentro de la galería de fotos del propio anuncio
-    (si la estructura cambiara y no hubiera galería, en toda la página)."""
+def motivo_no_disponible(html: str) -> str | None:
+    """«Gelöscht» o «Reserviert» si la página móvil marca así el anuncio, o None. Se busca dentro de la galería de
+    fotos del propio anuncio (si la estructura cambiara y no hubiera galería, en toda la página): la insignia solo
+    aparece ahí, no en los anuncios similares. No basta con buscar la palabra: «All Rights Reserved» es un copyright."""
     galeria = re.search(r"imagegallery--list.*?</ul>", html, re.S)
-    return bool(_BORRADO.search(galeria.group(0) if galeria else html))
+    m = _NO_DISPONIBLE.search(galeria.group(0) if galeria else html)
+    if not m:
+        return None
+    return "Reserviert" if m.group(1).lower() == "reserviert" else "Gelöscht"
+
+
+def esta_no_disponible(html: str) -> bool:
+    return motivo_no_disponible(html) is not None
 
 
 def veredicto_pagina(status: int, url_final: str, html: str) -> bool | None:
-    """True = anuncio retirado; False = vigente; None = no concluyente (bloqueo, límite de peticiones, error).
+    """True = anuncio retirado (borrado, reservado, vendido...); False = vigente; None = no concluyente (bloqueo, límite de peticiones, error).
     Un HTTP de error que no sea 404/410 NO significa que el anuncio haya desaparecido."""
     if status in (404, 410):
         return True
@@ -62,7 +73,7 @@ def veredicto_pagina(status: int, url_final: str, html: str) -> bool | None:
         return None
     if "/s-anzeige/" not in url_final:  # redirige a la lista de búsqueda
         return True
-    return esta_borrado(html)
+    return esta_no_disponible(html)
 
 
 def _slug(text: str) -> str:
@@ -338,3 +349,21 @@ class KleinanzeigenScraper(Scraper):
 
     async def is_active(self, url: str) -> bool:
         return url not in await self.inactive_urls([url])
+
+
+async def motivo_retirada(url: str) -> str | None:
+    """Comprobación rápida (una petición HTTP) de un solo anuncio: "Gelöscht", "Reserviert" o "retirado" si ya no está
+    disponible; None si sigue disponible o no se pudo comprobar (un bloqueo no cuenta como retirado)."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(headers={"User-Agent": MOBILE_UA, "Accept-Language": "de-DE"}, timeout=20,
+                                     follow_redirects=True) as cli:
+            r = await cli.get(url)
+    except httpx.HTTPError:
+        return None
+    veredicto = veredicto_pagina(r.status_code, str(r.url), r.text if r.status_code == 200 else "")
+    if not veredicto:
+        return None
+    return (motivo_no_disponible(r.text) if r.status_code == 200 else None) or "retirado"
+

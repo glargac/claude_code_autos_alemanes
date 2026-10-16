@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from ..database import SessionLocal
 from ..models import Car, MercadoCache
 from . import llm
+from ..scrapers.kleinanzeigen import motivo_retirada
 from .mercado_es import MercadoES, _norm
 from .settings_store import get_setting
 
@@ -224,6 +225,13 @@ async def _mercado(db: Session, car: Car) -> tuple[dict, bool]:
     return mercado, False
 
 
+class AnuncioNoDisponible(LookupError):
+    """El anuncio ya no se puede comprar (borrado, reservado o retirado): no tiene sentido analizarlo."""
+
+
+_MOTIVOS = {"Gelöscht": "borrado por el vendedor", "Reserviert": "reservado", "retirado": "retirado"}
+
+
 def _mensaje_error(exc: Exception) -> str:
     if isinstance(exc, (LookupError, ValueError)):  # pocos comparables, modelo no soportado...: el mensaje ya es claro
         return str(exc)
@@ -247,6 +255,11 @@ async def _analizar(car_id: int) -> None:
         ahora = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         try:
             ajustes = get_setting(db, "rentabilidad")
+            if car.source == "kleinanzeigen" and (motivo := await motivo_retirada(car.url)):
+                car.aktiv = False  # se retira de la lista (se guarda junto con el aviso)
+                raise AnuncioNoDisponible(
+                    f"Este anuncio ya no está disponible: está {_MOTIVOS[motivo]}. Se ha retirado de tu lista."
+                )
             mercado, de_cache = await _mercado(db, car)
             conflicto = conflicto_modelo(car.marke, car.modell, car.titel)
             if conflicto:  # el mercado es de otro modelo: la confianza baja siempre (la caché no se toca: se copia)
