@@ -14,6 +14,7 @@ from ..scrapers.base import Scraper
 from ..scrapers.kleinanzeigen import KleinanzeigenScraper
 from ..scrapers.autoscout24 import AutoScout24Scraper
 from .dedupe import apply_duplicates
+from .modelo import corregir_modelo
 from .scope import out_of_scope, purge_out_of_scope
 from .scoring import MarketIndex, compute_score
 from .settings_store import get_setting, save_setting
@@ -54,6 +55,8 @@ async def run_sync(db: Session, progress=None) -> dict:
                     continue  # eléctricos, furgonetas de carga...: fuera de alcance
                 seen.add(item.external_id)
                 data = {k: v for k, v in item.__dict__.items() if k != "extra" and v not in (None, "")}
+                if data.get("modell") and (nuevo := corregir_modelo(item.marke, data["modell"], item.titel)):
+                    data["modell_original"], data["modell"] = data["modell"], nuevo  # el título contradecía el modelo registrado
                 try:
                     with db.begin_nested():  # savepoint: un coche con datos raros no tumba al resto de la fuente
                         car = db.scalar(

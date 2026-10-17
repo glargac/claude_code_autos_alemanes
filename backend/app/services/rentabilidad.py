@@ -12,7 +12,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import re
 from datetime import datetime, timedelta
 
 from playwright.async_api import Error as PlaywrightError
@@ -23,6 +22,7 @@ from ..models import Car, MercadoCache
 from . import llm
 from ..scrapers.kleinanzeigen import motivo_retirada
 from .mercado_es import MercadoES, _norm
+from .modelo import conflicto_modelo
 from .settings_store import get_setting
 
 log = logging.getLogger("uvicorn.error")
@@ -120,51 +120,12 @@ def calcular_margen(precio_de: int, mercado: dict, ajustes: dict, avisos: list[s
     }
 
 
+METODO_VERSION = 3  # sube al cambiar cómo se estima el mercado: los informes antiguos pasan a «desactualizados»
+
+
 def hash_ajustes(ajustes: dict) -> str:
     """Huella de los ajustes con que se calculó: permite avisar si cambiaron los costes después."""
-    return hashlib.sha1(json.dumps(ajustes, sort_keys=True).encode()).hexdigest()[:10]
-
-
-# ---------------------------------------------------------------- coherencia título / modelo
-
-_NO_ES_MODELO = r"(?!\s?(?:ps|kw|hp|km|tkm|kg|cm|tsd|mm)\b)"  # «150 PS», «85 kW»: potencia, no modelo
-_MERCEDES = re.compile(r"(?<!\w)(cl[aks]?|sl[kc]?|ml|gl[acke]?|[abce])\s?-?\s?(\d{2,3})(?!\w)" + _NO_ES_MODELO, re.I)
-_BMW = re.compile(r"(?<!\w)([1-8]\d{2})(?:[a-z]{1,2})?(?!\w)" + _NO_ES_MODELO + r"|(?<!\w)(x[1-7])(?!\w)", re.I)
-_AUDI = re.compile(r"(?<!\w)([aq]\d)(?!\w)", re.I)
-_VARIANTES_GOLF = ("plus", "variant", "sportsvan", "alltrack", "cabrio")  # modelos distintos con otro precio
-
-
-def _designacion(marke: str, texto: str) -> str | None:
-    """Designación de modelo que aparece en un texto (p. ej. «b200», «116», «a3»), según la marca."""
-    if marke == "Mercedes-Benz":
-        m = _MERCEDES.search(texto)
-        return f"{m.group(1)}{m.group(2)}".lower() if m else None
-    if marke == "BMW":
-        m = _BMW.search(texto)
-        return (m.group(1) or m.group(2)).lower() if m else None
-    if marke == "Audi":
-        m = _AUDI.search(texto)
-        return m.group(1).lower() if m else None
-    return None
-
-
-def conflicto_modelo(marke: str, modell: str, titel: str) -> str | None:
-    """Detecta si el título del anuncio contradice el modelo registrado (el campo «Modell» lo elige el vendedor y a
-    veces es erróneo: «B 200 CDI» registrado como «C 200»). Reglas prudentes: solo avisa ante una contradicción
-    clara, no cuando el título es más genérico («A-Klasse» para un «A 160»). Si salta, la comparación de precios
-    en España puede ser de otro modelo y no es fiable."""
-    modelo, titulo = _norm(modell), (titel or "")
-    if not modelo or not titulo:
-        return None
-    en_modelo, en_titulo = _designacion(marke, modell), _designacion(marke, titulo)
-    if en_modelo and en_titulo and en_modelo != en_titulo:
-        return f"El título dice «{en_titulo.upper()}» pero el modelo registrado es «{modell}»: la comparación con España puede ser de otro modelo."
-    if marke == "Volkswagen" and modelo == "golf":  # Golf Plus / Variant / Sportsvan / Cabrio no son un Golf normal
-        palabras = set(re.findall(r"[a-zäöüß]+", titulo.lower()))
-        extra = [v for v in _VARIANTES_GOLF if v in palabras]
-        if extra:
-            return f"El título menciona «Golf {extra[0].title()}» pero el modelo registrado es «Golf»: es otro modelo, con otro precio."
-    return None
+    return hashlib.sha1(json.dumps([METODO_VERSION, ajustes], sort_keys=True).encode()).hexdigest()[:10]
 
 
 # ---------------------------------------------------------------- textos para la IA
@@ -208,7 +169,7 @@ def _mercado_txt(m: dict, c: dict) -> str:
 
 def _clave_cache(car: Car) -> str:
     return "|".join([car.marke, _norm(car.modell), str(car.erstzulassung), (car.kraftstoffart or "").lower(),
-                     (car.getriebe or "").lower(), str((car.kilometer or 0) // 10000)])
+                     (car.getriebe or "").lower(), str((car.kilometer or 0) // 10000), str(car.erstzulassung_monat or 0)])
 
 
 async def _mercado(db: Session, car: Car) -> tuple[dict, bool]:
@@ -219,7 +180,7 @@ async def _mercado(db: Session, car: Car) -> tuple[dict, bool]:
         return hit.data, True
     async with _lock:
         mercado = await MercadoES().comparables(car.marke, car.modell, car.erstzulassung, car.kilometer,
-                                                 car.kraftstoffart, car.getriebe)
+                                                 car.kraftstoffart, car.getriebe, car.erstzulassung_monat)
     db.merge(MercadoCache(key=clave, data=mercado, fetched_at=datetime.utcnow()))
     db.commit()
     return mercado, False
@@ -263,7 +224,8 @@ async def _analizar(car_id: int) -> None:
             mercado, de_cache = await _mercado(db, car)
             conflicto = conflicto_modelo(car.marke, car.modell, car.titel)
             if conflicto:  # el mercado es de otro modelo: la confianza baja siempre (la caché no se toca: se copia)
-                mercado = {**mercado, "confianza": "baja", "confianza_motivo": conflicto}
+                motivos = [m for m in (conflicto, mercado.get("confianza_motivo")) if m]
+                mercado = {**mercado, "confianza": "baja", "confianza_motivo": " · ".join(motivos)}
             calculo = calcular_margen(car.preis, mercado, ajustes, [conflicto] if conflicto else None)
             informe, aviso_ia = None, None
             if llm.enabled():

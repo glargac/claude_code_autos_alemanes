@@ -55,12 +55,16 @@ class Criterio:
 
 
 # Del más estricto al más laxo: se para en el primero que da suficientes comparables.
+# Consulta que se baja del sitio (sobre ella se aplica la escalera en local). Con la generación fijada, una ventana de años
+# amplia es aceptable: el ajuste por año corrige el resto.
+CONSULTA_AMPLIA = Criterio(3, 0.50, True, False)
 ESCALERA = [
     Criterio(1, 0.25, True, True),
     Criterio(1, 0.25, True, False),
     Criterio(1, 0.40, True, False),
     Criterio(2, 0.50, True, False),
-    Criterio(2, None, False, False),
+    Criterio(3, 0.50, True, False),
+    Criterio(3, None, False, False),
 ]
 
 
@@ -105,6 +109,18 @@ def _cambio(texto: str | None) -> str | None:
     return "automatik" if t.startswith("autom") else "manuell" if t.startswith(("manual", "schalt")) else None
 
 
+def _generacion(taxonomia: str | None) -> int | None:
+    """generation_id de `tracking.modelTaxonomy` («[make_id:47, ..., generation_id:182, ...]»). Distingue p. ej. el
+    Clase A de 2008-2011 (181, mediana ~5.800 €) del de 2012-2018 (182, ~12.900 €): mismo nombre, otro coche."""
+    m = re.search(r"generation_id:(\d+)", taxonomia or "")
+    return int(m.group(1)) if m else None
+
+
+def _mes(texto: str | None) -> int | None:
+    m = re.fullmatch(r"(\d{2})-\d{4}", texto or "")
+    return int(m.group(1)) if m and 1 <= int(m.group(1)) <= 12 else None
+
+
 def parse_listing(props: dict) -> list[dict]:
     """Anuncios de una página de resultados de AutoScout24.es."""
     out = []
@@ -119,6 +135,7 @@ def parse_listing(props: dict) -> list[dict]:
         out.append({
             "modell": v.get("model") or "", "grupo": v.get("modelGroup") or "", "precio": precio, "km": km, "anio": anio,
             "combustible": _combustible(v.get("fuel")), "cambio": _cambio(v.get("transmission")),
+            "generacion": _generacion(t.get("modelTaxonomy")), "mes": _mes(t.get("firstRegistration")),
             "url": BASE + x["url"].split("?")[0] if x.get("url") else None,
             "ort": ((x.get("location") or {}).get("city") or "").strip().title(),
             "vendedor": (x.get("seller") or {}).get("type"),
@@ -155,6 +172,44 @@ def elegir_criterio(anuncios: list[dict], anio: int, km: int | None, combustible
         if mejor is None or len(subconjunto) > len(mejor[1]):
             mejor = (indice, subconjunto)
     return mejor
+
+
+class SinComparablesDeSuGeneracion(LookupError):
+    """Todos los anuncios de España son de una generación posterior a la del coche."""
+
+
+def _fecha(anio: int, mes: int | None) -> int:
+    return anio * 12 + ((mes or 6) - 1)  # sin mes se toma mitad de año
+
+
+def inferir_generacion(anuncios: list[dict], anio: int, mes: int | None = None) -> tuple[int | None, str | None]:
+    """Generación (generation_id) del coche evaluado, deducida de las fechas en que cada generación aparece a la venta en
+    España, y un aviso si no se puede saber con certeza (año de transición sin mes, o mes pegado al cambio).
+    (None, None) si los anuncios no traen generación o hay muy pocos."""
+    con = [a for a in anuncios if a.get("generacion")]
+    gens = sorted({a["generacion"] for a in con})
+    if len(con) < 5 or not gens:
+        return None, None
+    # Cuándo empieza a verse cada generación: percentil 10 de sus fechas (robusto a una matriculación anticipada suelta).
+    inicio = {g: _cuantil([_fecha(a["anio"], a.get("mes")) for a in con if a["generacion"] == g], 0.10) for g in gens}
+    d = _fecha(anio, mes)
+    if len(gens) == 1:
+        if d < inicio[gens[0]] - 6:  # el coche es anterior a todos los comparables: son de otra generación
+            raise SinComparablesDeSuGeneracion(
+                f"Los anuncios de España son de una generación posterior a la de este coche ({anio}): no hay comparables de su generación."
+            )
+        return gens[0], None
+    empezadas = [g for g in gens if inicio[g] <= d]
+    g = max(empezadas, key=lambda h: inicio[h]) if empezadas else min(gens, key=lambda h: inicio[h])
+    # Los límites entre generaciones son los comienzos de todas menos la más antigua. Hay incertidumbre si el coche es de
+    # un año en que cambia la generación y no se sabe el mes, o si su mes queda a 3 meses o menos de un cambio.
+    limites = [inicio[h] for h in gens if h != min(gens, key=lambda x: inicio[x])]
+    transicion = (not mes and any(l // 12 == anio for l in limites)) or (bool(mes) and any(abs(l - d) <= 3 for l in limites))
+    if transicion:
+        suposicion = "la más reciente" if g == max(gens, key=lambda h: inicio[h]) else "la anterior"
+        return g, (f"En {anio} cambió la generación de este modelo y el anuncio no permite saber con certeza a cuál pertenece "
+                   f"(se ha supuesto {suposicion}): el precio es incierto.")
+    return g, None
 
 
 def deduplicar(anuncios: list[dict]) -> list[dict]:
@@ -221,7 +276,7 @@ def confianza(n: int, indice_criterio: int) -> str:
     """alta: muchos comparables con criterio estricto; baja: pocos o con criterio muy ampliado."""
     if n >= MIN_COMPARABLES and indice_criterio <= 1:
         return "alta"
-    if n >= 5 and indice_criterio <= 3:
+    if n >= 5 and indice_criterio <= 3:  # hasta año ±2
         return "media"
     return "baja"
 
@@ -269,9 +324,10 @@ class MercadoES:
         return encontrados
 
     async def comparables(self, marke: str, modell: str, anio: int, km: int | None,
-                          combustible: str | None, cambio: str | None) -> dict:
-        """Estadísticas de precio en España para un coche. Una consulta amplia (año ±2, km ±50 %, mismo combustible)
-        y, sobre lo descargado, se aplica la escalera de criterios en local hasta tener comparables suficientes."""
+                          combustible: str | None, cambio: str | None, mes: int | None = None) -> dict:
+        """Estadísticas de precio en España para un coche. Una consulta amplia (año ±3, km ±50 %, mismo combustible);
+        sobre lo descargado se deduce la generación del coche, se descartan los anuncios de otra generación y se aplica la
+        escalera de criterios en local hasta tener comparables suficientes."""
         if _norm(modell) in {"", "andere", "sonstige", "sonstiges", "other"}:
             raise ValueError("El anuncio no indica el modelo (\"Andere\"): no se pueden buscar comparables en España. "
                              "Si conoces el modelo, no hay forma de indicarlo todavía.")
@@ -279,11 +335,16 @@ class MercadoES:
             raise ValueError(f"No se puede buscar en AutoScout24.es: marca {marke!r}, modelo {modell!r}")
         async with self._context() as ctx:
             page = await ctx.new_page()
-            anuncios = await self._recoger(page, marke, modell, anio, km, combustible, ESCALERA[3], MAX_PAGINAS)
+            anuncios = await self._recoger(page, marke, modell, anio, km, combustible, CONSULTA_AMPLIA, MAX_PAGINAS)
             if len(anuncios) < MIN_USABLE:  # último recurso: sin filtro de km ni de combustible
                 await self._pause()
-                anuncios = deduplicar(anuncios + await self._recoger(page, marke, modell, anio, km, combustible, ESCALERA[4], 2))
+                anuncios = deduplicar(anuncios + await self._recoger(page, marke, modell, anio, km, combustible, ESCALERA[-1], 2))
 
+        generacion, aviso_gen = inferir_generacion(anuncios, anio, mes)
+        excluidos = 0
+        if generacion:
+            misma = [a for a in anuncios if a.get("generacion") in (generacion, None)]
+            excluidos, anuncios = len(anuncios) - len(misma), misma
         indice, unicos = elegir_criterio(anuncios, anio, km, combustible, cambio)
         criterio = ESCALERA[indice]
         stats = estadisticas(unicos, anio, km)
@@ -292,9 +353,13 @@ class MercadoES:
                 f"Solo {len(unicos)} anuncio(s) comparable(s) en España para {marke} {modell} {anio}: no hay base para estimar el precio"
                 + (". Puede que AutoScout24.es llame al modelo de otra forma." if not anuncios else "")
             )
+        anios = [a["anio"] for a in unicos]
         return {
             **stats,
-            "confianza": confianza(stats["n"], indice),
+            "confianza": "baja" if aviso_gen else confianza(stats["n"], indice),
+            "confianza_motivo": aviso_gen,
+            "generacion": {"id": generacion, "anios": f"{min(anios)}–{max(anios)}" if generacion else None,
+                           "excluidos": excluidos, "aviso": aviso_gen} if generacion else None,
             "criterio": criterio.describir(),
             "fuente": "autoscout24.es",
             "consultado_el": datetime.utcnow().isoformat(timespec="seconds") + "Z",

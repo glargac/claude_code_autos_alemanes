@@ -141,6 +141,11 @@ export default function CarCard({ car, onChange }) {
             <h2 className="font-semibold">
               {car.marke} {car.modell}
             </h2>
+            {car.modell_original && (
+              <span className="text-[11px] text-sky-400" title={`El vendedor lo registró como «${car.modell_original}», pero su título dice otra cosa: el modelo se corrigió desde el título.`}>
+                modelo corregido
+              </span>
+            )}
             <span className={`rounded-full px-2 py-0.5 text-xs ${STATUS_STYLE[car.status]}`}>
               {car.status}
               {car.status === "Termin vereinbart" && car.termin_am && ` · ${new Date(car.termin_am).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}`}

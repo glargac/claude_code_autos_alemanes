@@ -137,7 +137,8 @@ def parse_listing(html: str, marke: str, now: datetime | None = None) -> list[Sc
             continue
         price = next((_int(l) for l in lines if "€" in l and not l.startswith("(")), None)
         km = next((_int(l) for l in lines if re.fullmatch(r"[\d.]+ km", l)), None)
-        ez = next((int(m.group(1)) for l in lines if (m := re.fullmatch(r"EZ \d{2}/(\d{4})", l))), None)
+        ez_m = next((m for l in lines if (m := re.fullmatch(r"EZ (\d{2})/(\d{4})", l))), None)
+        ez, ez_mes = (int(ez_m.group(2)), int(ez_m.group(1))) if ez_m else (None, None)
         ort = next((l for l in lines if re.match(r"\d{5} ", l)), None)
         img = art.select_one("img[src*='img.kleinanzeigen.de']")
         snippet = art.select_one("p")
@@ -150,6 +151,7 @@ def parse_listing(html: str, marke: str, now: datetime | None = None) -> list[Sc
             titel=title_el.get_text(strip=True),
             image_url=img["src"].replace("rule=$_2.AUTO", "rule=$_59.AUTO") if img else None,  # $_2 = miniatura
             erstzulassung=ez,
+            erstzulassung_monat=ez_mes if ez_mes and 1 <= ez_mes <= 12 else None,
             kilometer=km,
             preis=price,
             ort=ort,

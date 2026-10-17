@@ -18,6 +18,7 @@ class ScrapedCar:
     titel: str = ""
     image_url: str | None = None
     erstzulassung: int | None = None
+    erstzulassung_monat: int | None = None  # decide los años en que cambió la generación del modelo
     kilometer: int | None = None
     preis: int | None = None
     kraftstoffart: str | None = None

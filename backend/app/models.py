@@ -29,7 +29,10 @@ class Car(Base):
     marke: Mapped[str] = mapped_column(String(50), index=True)
     modell: Mapped[str] = mapped_column(String(100), index=True)
     titel: Mapped[str] = mapped_column(String(300), default="")
+    # Si el modelo se corrigió desde el título (el del vendedor lo contradecía), el valor que registró el vendedor
+    modell_original: Mapped[str | None] = mapped_column(String(100))
     erstzulassung: Mapped[int | None] = mapped_column(Integer)
+    erstzulassung_monat: Mapped[int | None] = mapped_column(Integer)
     kilometer: Mapped[int | None] = mapped_column(Integer)
     preis: Mapped[int | None] = mapped_column(Integer)
     kraftstoffart: Mapped[str | None] = mapped_column(String(30))

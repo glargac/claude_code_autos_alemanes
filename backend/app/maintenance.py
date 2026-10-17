@@ -1,6 +1,7 @@
 """Tareas de mantenimiento puntuales. Uso (desde backend/, con el entorno virtual):
 
     python -m app.maintenance purge-damaged [--dry-run]
+    python -m app.maintenance fix-models [--dry-run]   # corrige el modelo desde el título donde lo contradice
     python -m app.maintenance verify-stale [--dry-run] [--horas 12]
     python -m app.maintenance probar-ia          # comprueba la clave y el modelo de IA con una petición mínima
     python -m app.maintenance gemini-models      # lista los modelos de Gemini que acepta tu clave
@@ -20,6 +21,28 @@ from .services.dedupe import apply_duplicates
 from .services.scope import has_followup
 from .services.settings_store import get_setting
 from .services.sync import rescore_all
+
+
+def fix_models(dry_run: bool = False) -> dict:
+    """Corrige `modell` desde el título en los coches guardados donde lo contradice con claridad (ver services/modelo.py).
+    Guarda el valor del vendedor en `modell_original`. Después recalcula duplicados y scores."""
+    from .services.modelo import corregir_modelo
+
+    ensure_columns()
+    with SessionLocal() as db:
+        cambios = []
+        for car in db.scalars(select(Car)):
+            nuevo = corregir_modelo(car.marke, car.modell, car.titel)
+            if nuevo and nuevo != car.modell:
+                cambios.append((car.id, car.marke, car.modell, nuevo, car.titel[:50]))
+                if not dry_run:
+                    car.modell_original = car.modell_original or car.modell
+                    car.modell = nuevo
+        if not dry_run:
+            db.commit()
+            apply_duplicates(db)
+            rescore_all(db)
+        return {"corregidos" if not dry_run else "se_corregirían": len(cambios), "detalle": cambios}
 
 
 async def verify_stale(horas: float = 12, dry_run: bool = False) -> dict:
@@ -69,12 +92,17 @@ async def purge_damaged(dry_run: bool = False) -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("task", choices=["purge-damaged", "verify-stale", "probar-ia", "gemini-models"])
+    parser.add_argument("task", choices=["purge-damaged", "verify-stale", "fix-models", "probar-ia", "gemini-models"])
     parser.add_argument("--horas", type=float, default=12, help="verify-stale: antigüedad mínima desde que se vio por última vez")
     parser.add_argument("--dry-run", action="store_true", help="solo cuenta, no borra")
     args = parser.parse_args()
     if args.task == "purge-damaged":
         print(asyncio.run(purge_damaged(args.dry_run)))
+    elif args.task == "fix-models":
+        r = fix_models(args.dry_run)
+        print({k: v for k, v in r.items() if k != "detalle"})
+        for d in r["detalle"]:
+            print("  ", d)
     elif args.task == "verify-stale":
         print(asyncio.run(verify_stale(args.horas, args.dry_run)))
     elif args.task == "probar-ia":

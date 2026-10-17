@@ -27,6 +27,7 @@ class CarOut(BaseModel):
     image_url: str | None
     marke: str
     modell: str
+    modell_original: str | None = None
     titel: str
     erstzulassung: int | None
     kilometer: int | None

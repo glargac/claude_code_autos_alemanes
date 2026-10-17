@@ -95,6 +95,12 @@ def _getriebe(text: str | None) -> str | None:
     return "Automatik" if "automatik" in text.lower() else "Manuell" if "schalt" in text.lower() else None
 
 
+def _mes(texto: str | None) -> int | None:
+    """Mes de «MM-AAAA» (formato de firstRegistration)."""
+    m = re.fullmatch(r"(\d{2})-\d{4}", texto or "")
+    return int(m.group(1)) if m and 1 <= int(m.group(1)) <= 12 else None
+
+
 def parse_listing(props: dict) -> list[ScrapedCar]:
     cars = []
     for x in props.get("listings", []):
@@ -113,6 +119,7 @@ def parse_listing(props: dict) -> list[ScrapedCar]:
             titel=" ".join(p for p in (v.get("make"), v.get("model"), v.get("modelVersionInput")) if p),
             image_url=re.sub(r"/\d+x\d+\.webp$", "/720x540.webp", img) if img else None,
             erstzulassung=_int((t.get("firstRegistration") or "")[-4:]),
+            erstzulassung_monat=_mes(t.get("firstRegistration")),
             kilometer=_int(t.get("mileage")),
             preis=x.get("price", {}).get("priceRaw"),
             kraftstoffart=v.get("fuel"),
