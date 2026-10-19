@@ -4,7 +4,7 @@ import CarCard, { SOURCE_LABEL, STATUSES } from "./CarCard.jsx";
 import Settings from "./Settings.jsx";
 
 const MARKEN = ["Mercedes-Benz", "BMW", "Audi", "Volkswagen", "Porsche"];
-const EMPTY_FILTERS = { fuente: "", marke: "", modell: "", getriebe: "", status: "", publicado_dias: "", inaktiv_anzeigen: false };
+const EMPTY_FILTERS = { fuente: "", marke: "", modell: "", getriebe: "", status: "", publicado_dias: "", inaktiv_anzeigen: false, mostrar_ocultos: false };
 const sel = "rounded-lg bg-slate-900 px-3 py-1.5 text-sm ring-1 ring-slate-700";
 
 function Filters({ filters, setFilters, count }) {
@@ -40,6 +40,10 @@ function Filters({ filters, setFilters, count }) {
       <label className="flex items-center gap-2 text-sm text-slate-400">
         <input type="checkbox" checked={filters.inaktiv_anzeigen} onChange={(e) => set("inaktiv_anzeigen", e.target.checked)} />
         Incluir vendidos
+      </label>
+      <label className="flex items-center gap-2 text-sm text-slate-400">
+        <input type="checkbox" checked={filters.mostrar_ocultos} onChange={(e) => set("mostrar_ocultos", e.target.checked)} />
+        Mostrar ocultos
       </label>
       {dirty && (
         <button onClick={() => setFilters(EMPTY_FILTERS)} className="text-sm text-sky-400">
@@ -122,6 +126,41 @@ function SyncBanner({ sync }) {
   return null;
 }
 
+const TOP_N = 20;
+const SIN_MODELO = /^(andere|sonstige|sonstiges|other)?$/;
+const necesitaAnalisis = (c) =>
+  !c.oculto && c.preis && c.erstzulassung && !SIN_MODELO.test(c.modell.toLowerCase().replace(/[\s_-]+/g, "")) &&
+  !(c.rentabilidad && (c.rentabilidad.estado === "calculando" || (c.rentabilidad.estado === "listo" && !c.rentabilidad.desactualizado)));
+
+function LoteBanner({ lote, fin, onClose }) {
+  if (lote.running) {
+    const pct = lote.total ? Math.round((lote.hechos / lote.total) * 100) : 0;
+    return (
+      <div className="space-y-2 rounded-lg bg-violet-950 px-4 py-3 text-sm text-violet-200">
+        <div className="flex justify-between">
+          <span>Analizando el Top {TOP_N} — {lote.hechos} de {lote.total}</span>
+          <span className="tabular-nums">{pct}%</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-violet-900">
+          <div className="h-full rounded-full bg-violet-400 transition-all duration-700" style={{ width: `${Math.max(pct, 2)}%` }} />
+        </div>
+        <p className="text-xs text-violet-400">Uno detrás de otro, unos 20 s por coche. Puedes seguir usando la app.</p>
+      </div>
+    );
+  }
+  if (!fin) return null;
+  return (
+    <p className="flex items-center justify-between rounded-lg bg-green-950 px-4 py-2 text-sm text-green-300">
+      <span>
+        Top {TOP_N} analizado: {lote.hechos - lote.errores} informes
+        {lote.errores > 0 && `, ${lote.errores} con error (míralos en su ficha)`}
+        {lote.omitidos > 0 && ` · ${lote.omitidos} omitidos (ya al día o sin modelo)`}.
+      </span>
+      <button onClick={onClose} className="ml-3 text-green-400">✕</button>
+    </p>
+  );
+}
+
 export default function App() {
   const [tab, setTab] = useState("dashboard");
   const [cars, setCars] = useState([]);
@@ -129,6 +168,10 @@ export default function App() {
   const [sync, setSync] = useState({ running: false });
   const [now, setNow] = useState(() => Date.now());
   const wasRunning = useRef(false);
+  const [lote, setLote] = useState({ running: false });
+  const [loteFin, setLoteFin] = useState(false);
+  const wasLote = useRef(false);
+  const [deshacer, setDeshacer] = useState(null);
 
   const load = useCallback(() => api.cars(filters).then(setCars).catch(console.error), [filters]);
 
@@ -156,6 +199,54 @@ export default function App() {
     const id = setInterval(() => api.syncStatus().then(setSync).catch(console.error), 3000);
     return () => clearInterval(id);
   }, [sync.running, load]);
+
+  // Análisis del Top N: el backend lo hace en segundo plano; mientras corre se consulta su avance y se refresca la lista.
+  useEffect(() => {
+    api.topStatus().then(setLote).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    if (!lote.running) {
+      if (wasLote.current) {
+        load();
+        setLoteFin(true);
+      }
+      wasLote.current = false;
+      return;
+    }
+    wasLote.current = true;
+    const id = setInterval(() => {
+      api.topStatus().then(setLote).catch(console.error);
+      load();
+    }, 4000);
+    return () => clearInterval(id);
+  }, [lote.running, load]);
+
+  const pendientes = cars.filter((c) => !c.oculto).slice(0, TOP_N).filter(necesitaAnalisis).length;
+
+  const runTop = async () => {
+    if (!confirm(`Analizar la rentabilidad de los ${TOP_N} mejores coches de la lista.\n\n${pendientes} necesitan análisis (el resto ya está al día o no tiene modelo).\nTarda unos ${Math.max(1, Math.round(pendientes / 3))} min y usa la IA (~2.000 tokens por coche, ~${(pendientes * 2).toLocaleString("de-DE")}.000 en total).`)) return;
+    try {
+      setLoteFin(false);
+      setLote(await api.analyzeTop(filters, TOP_N));
+      load();
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  const onCarChange = (upd) => {
+    const prev = cars.find((x) => x.id === upd.id);
+    if (upd.oculto && !filters.mostrar_ocultos) {
+      setCars((list) => list.filter((x) => x.id !== upd.id));
+      if (prev && !prev.oculto) {
+        setDeshacer({ id: upd.id, nombre: `${upd.marke} ${upd.modell}` });
+        setTimeout(() => setDeshacer((d) => (d?.id === upd.id ? null : d)), 8000);
+      }
+    } else {
+      setCars((list) => list.map((x) => (x.id === upd.id ? upd : x)));
+    }
+  };
 
   const runSync = async () => {
     setSync(await api.sync());
@@ -192,13 +283,36 @@ export default function App() {
       </header>
 
       <SyncBanner sync={sync} />
+      <LoteBanner lote={lote} fin={loteFin} onClose={() => setLoteFin(false)} />
+      {deshacer && (
+        <p className="flex items-center justify-between rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-200">
+          <span>{deshacer.nombre} oculto de tu lista.</span>
+          <button
+            onClick={() => api.updateCar(deshacer.id, { oculto: false }).then(() => { setDeshacer(null); load(); }).catch((e) => alert(e.message))}
+            className="ml-3 text-sky-400"
+          >
+            Deshacer
+          </button>
+        </p>
+      )}
 
       {tab === "dashboard" ? (
         <>
           <Filters filters={filters} setFilters={setFilters} count={cars.length} />
+          <div className="flex items-center gap-3">
+            <button
+              onClick={runTop}
+              disabled={lote.running || pendientes === 0}
+              title={`Calcula margen e informe de IA de los ${TOP_N} primeros de la lista que aún no lo tienen al día`}
+              className="rounded-lg bg-violet-700 px-4 py-1.5 text-sm hover:bg-violet-600 disabled:opacity-50"
+            >
+              {lote.running ? "Analizando…" : pendientes === 0 ? `Top ${TOP_N} al día` : `Analizar Top ${TOP_N}`}
+            </button>
+            {!lote.running && pendientes > 0 && <span className="text-xs text-slate-500">{pendientes} por analizar</span>}
+          </div>
           {cars.length === 0 && <p className="text-slate-400">Sin resultados. Ajusta los filtros o pulsa Sincronizar.</p>}
           {cars.map((c) => (
-            <CarCard key={c.id} car={c} onChange={(upd) => setCars((list) => list.map((x) => (x.id === upd.id ? upd : x)))} />
+            <CarCard key={c.id} car={c} onChange={onCarChange} />
           ))}
         </>
       ) : (

@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -38,8 +38,7 @@ def _others(db: Session, ids: list[int]) -> dict[int, list[Car]]:
     return grouped
 
 
-@router.get("", response_model=list[CarOut])
-def list_cars(
+def _filtros(
     fuente: Literal["kleinanzeigen", "autoscout24"] | None = None,
     marke: str | None = None,
     modell: str | None = None,
@@ -47,28 +46,53 @@ def list_cars(
     status: Status | None = None,
     publicado_dias: int | None = None,
     inaktiv_anzeigen: bool = False,
-    db: Session = Depends(get_db),
-):
+    mostrar_ocultos: bool = False,
+) -> dict:
+    return dict(fuente=fuente, marke=marke, modell=modell, getriebe=getriebe, status=status,
+                publicado_dias=publicado_dias, inaktiv_anzeigen=inaktiv_anzeigen, mostrar_ocultos=mostrar_ocultos)
+
+
+def _consulta(f: dict):
     q = select(Car).where(Car.duplicado_de.is_(None)).order_by(Car.score.desc().nulls_last())  # los duplicados cuelgan de su principal
-    if not inaktiv_anzeigen:
+    if not f["inaktiv_anzeigen"]:
         q = q.where(Car.aktiv.is_(True))
-    if fuente:
-        q = q.where(Car.source == fuente)
-    if marke:
-        q = q.where(Car.marke == marke)
-    if modell:
-        q = q.where(Car.modell.ilike(f"%{modell}%"))
-    if getriebe:
-        q = q.where(Car.getriebe == getriebe)
-    if status:
-        q = q.where(Car.status == status.value)
-    if publicado_dias:
-        q = q.where(Car.veroeffentlicht_am >= datetime.utcnow() - timedelta(days=publicado_dias))
+    if not f["mostrar_ocultos"]:
+        q = q.where(Car.oculto.is_(False))
+    if f["fuente"]:
+        q = q.where(Car.source == f["fuente"])
+    if f["marke"]:
+        q = q.where(Car.marke == f["marke"])
+    if f["modell"]:
+        q = q.where(Car.modell.ilike(f"%{f['modell']}%"))
+    if f["getriebe"]:
+        q = q.where(Car.getriebe == f["getriebe"])
+    if f["status"]:
+        q = q.where(Car.status == f["status"].value)
+    if f["publicado_dias"]:
+        q = q.where(Car.veroeffentlicht_am >= datetime.utcnow() - timedelta(days=f["publicado_dias"]))
+    return q
+
+
+@router.get("", response_model=list[CarOut])
+def list_cars(f: dict = Depends(_filtros), db: Session = Depends(get_db)):
     weights = get_setting(db, "weights")
-    cars = db.scalars(q).all()
+    cars = db.scalars(_consulta(f)).all()
     others = _others(db, [c.id for c in cars])
     h = _hash(db)
     return [_out(c, weights, others, h) for c in cars]
+
+
+@router.post("/analizar-top", status_code=202)
+async def analizar_top(n: int = Query(20, ge=1, le=50), f: dict = Depends(_filtros), db: Session = Depends(get_db)):
+    """Lanza «Analizar rentabilidad» en segundo plano para los N primeros coches de la lista (mismos filtros que la
+    lista, ocultos fuera), de uno en uno. Se saltan los que ya tienen informe al día y los «Andere» (sin modelo)."""
+    coches = db.scalars(_consulta({**f, "mostrar_ocultos": False}).limit(n)).all()
+    return dict(rentabilidad_service.iniciar_lote(db, coches))
+
+
+@router.get("/analizar-top/status")
+def analizar_top_status():
+    return dict(rentabilidad_service.lote)
 
 
 @router.patch("/{car_id}", response_model=CarOut)
@@ -86,6 +110,10 @@ def update_car(car_id: int, body: CarUpdate, db: Session = Depends(get_db)):
         car.termin_am = body.termin_am
     if body.notizen is not None:
         car.notizen = body.notizen
+    if body.oculto is not None:  # el grupo de duplicados se oculta o se muestra junto
+        car.oculto = body.oculto
+        for d in _others(db, [car.id]).get(car.id, []):
+            d.oculto = body.oculto
     db.commit()
     return _out(car, get_setting(db, "weights"), _others(db, [car.id]), _hash(db))
 

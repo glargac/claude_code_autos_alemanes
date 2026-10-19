@@ -44,6 +44,7 @@ class CarOut(BaseModel):
     termin_am: datetime | None
     notizen: str
     aktiv: bool
+    oculto: bool = False
     farbe: str = "gris"
     otros_enlaces: list[OtroEnlace] = []
     rentabilidad: dict | None = None
@@ -53,6 +54,7 @@ class CarUpdate(BaseModel):
     status: Status | None = None
     termin_am: datetime | None = None
     notizen: str | None = None
+    oculto: bool | None = None
 
 
 class SearchSettings(BaseModel):

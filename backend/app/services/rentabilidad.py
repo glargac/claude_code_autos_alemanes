@@ -258,6 +258,55 @@ def iniciar_analisis(db: Session, car: Car) -> bool:
     return True
 
 
+# ---------------------------------------------------------------- lote («Analizar el Top N»)
+
+lote: dict = {"running": False, "total": 0, "hechos": 0, "errores": 0, "omitidos": 0, "actual": None}
+_SIN_MODELO = {"", "andere", "sonstige", "sonstiges", "other"}
+
+
+def analizable(car: Car) -> bool:
+    return bool(car.preis and car.erstzulassung and _norm(car.modell) not in _SIN_MODELO)
+
+
+def al_dia(car: Car, ajustes_hash: str) -> bool:
+    r = car.rentabilidad or {}
+    return r.get("estado") == "listo" and r.get("ajustes_hash") == ajustes_hash
+
+
+async def _analizar_lote(ids: list[int]) -> None:
+    try:
+        for car_id in ids:
+            lote["actual"] = car_id
+            await _analizar(car_id)
+            lote["hechos"] += 1
+            with SessionLocal() as db:
+                car = db.get(Car, car_id)
+                if car is None or (car.rentabilidad or {}).get("estado") != "listo":
+                    lote["errores"] += 1
+    finally:
+        lote.update(running=False, actual=None)
+
+
+def iniciar_lote(db: Session, coches: list[Car]) -> dict:
+    """Analiza uno detrás de otro (no a la vez: se respeta el ritmo con AutoScout24.es y la cuota de la IA) los coches
+    dados, saltando los que ya tienen informe al día o no se pueden analizar. Todos quedan «calculando» desde el inicio."""
+    if lote["running"]:
+        return lote
+    h = hash_ajustes(get_setting(db, "rentabilidad"))
+    pendientes = [c for c in coches if analizable(c) and not al_dia(c, h) and (c.rentabilidad or {}).get("estado") != "calculando"]
+    lote.update(running=bool(pendientes), total=len(pendientes), hechos=0, errores=0, actual=None,
+                omitidos=len(coches) - len(pendientes))
+    if not pendientes:
+        return lote
+    ahora = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    for c in pendientes:
+        _guardar(db, c, {"estado": "calculando", "error": None, "iniciado_el": ahora})
+    tarea = asyncio.create_task(_analizar_lote([c.id for c in pendientes]))
+    _tasks.add(tarea)
+    tarea.add_done_callback(_tasks.discard)
+    return lote
+
+
 def reiniciar_interrumpidos(db: Session) -> int:
     """Al arrancar: un análisis que figura "calculando" quedó cortado por un reinicio del backend."""
     n = 0

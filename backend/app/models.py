@@ -57,6 +57,8 @@ class Car(Base):
     # Informe de "Analizar rentabilidad" (bajo demanda): estado, mercado en España, cálculo de margen e informe de IA
     rentabilidad: Mapped[dict | None] = mapped_column(JSON)
     duplicado_de: Mapped[int | None] = mapped_column(Integer, index=True)
+    # Oculto por el usuario de la lista principal (no se borra: la sync lo recrearía). Reversible.
+    oculto: Mapped[bool] = mapped_column(default=False, index=True)
     erstmals_gesehen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     zuletzt_gesehen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

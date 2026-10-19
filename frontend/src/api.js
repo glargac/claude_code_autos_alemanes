@@ -19,6 +19,11 @@ export const api = {
     const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v !== "" && v != null));
     return req(`/cars?${qs}`);
   },
+  analyzeTop: (filters = {}, n = 20) => {
+    const qs = new URLSearchParams(Object.entries({ ...filters, n }).filter(([, v]) => v !== "" && v != null));
+    return req(`/cars/analizar-top?${qs}`, { method: "POST" });
+  },
+  topStatus: () => req("/cars/analizar-top/status"),
   car: (id) => req(`/cars/${id}`),
   analyzeProfitability: (id) => req(`/cars/${id}/rentabilidad`, { method: "POST" }),
   updateCar: (id, body) => req(`/cars/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

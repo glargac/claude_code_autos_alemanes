@@ -56,6 +56,8 @@ Estados: `calculando` → `listo` | `error`; al arrancar, un `calculando` huérf
 
 **Duplicados** (`services/dedupe.py`): el mismo coche puede estar en los dos portales o repetido en uno. Las filas **no se borran** (la sync identifica anuncios por fuente + id externo y los recrearía): una es la principal y las demás tienen `duplicado_de` = id de la principal. La lista solo muestra principales, con `otros_enlaces`. Reglas conservadoras (un falso positivo esconde un coche distinto): misma marca, modelo, año, combustible y Getriebe, y (1) km idénticos + precio ±3 % + mismo sitio o km no redondo; (2) km ±0,3 % + precio ±2 % + mismo sitio o título parecido; (3) km ±0,1 % no redondos + precio ±2 %. "Redondo" = múltiplo de 100 (los vendedores redondean). Principal: la que ya tiene seguimiento (estado/notas/cita), luego la más completa, luego la más antigua. Se recalcula al arrancar el backend y tras guardar cada fuente; el índice de precios cuenta cada coche una sola vez. En la base real: 79 duplicados (59 entre portales, 20 en el mismo portal) de 963 activos.
 
+**Ocultar y Top 20:** cada ficha tiene «Ocultar» (`Car.oculto`, PATCH `{oculto}`): no se borra porque la sync recrearía el anuncio; se oculta también su grupo de duplicados; «Mostrar ocultos» en los filtros lo recupera y la interfaz ofrece «Deshacer» 8 s. «Analizar Top 20» (`POST /api/cars/analizar-top?n=20` + los filtros de la lista; avance en `GET /api/cars/analizar-top/status`, estado en memoria) analiza de uno en uno los 20 primeros de la lista, saltando ocultos, «Andere» y los que ya tienen informe al día; todos quedan «calculando» al empezar. Cuesta ~2.000 tokens de IA y ~20 s por coche. El endpoint es `async` (necesita el bucle de eventos para `create_task`).
+
 **Migraciones:** `database.ensure_columns()` añade al arrancar las columnas nuevas a una base existente (`create_all` no altera tablas). Al añadir una columna al modelo, registrarla en `_ADDED_COLUMNS`.
 
 **Sync y scoring:**
@@ -80,4 +82,4 @@ No versionar: `backend/.env` (clave del LLM), `backend/data/autos.db` (datos y n
 
 ## Pendiente
 
-Empaquetado de escritorio (Tauri/Electron), probar el informe de IA con la clave real de Gemini y afinar el prompt, impuesto de matriculación según CO₂ (hoy un % fijo editable), guardar el tipo de vendedor alemán (privado/profesional) para el IVA, inferir el modelo de los "Andere" desde el título, "Analizar el top 10" de una vez, decidir si se sube el tope de 4 páginas.
+Empaquetado de escritorio (Tauri/Electron), probar el informe de IA con la clave real de Gemini y afinar el prompt, impuesto de matriculación según CO₂ (hoy un % fijo editable), guardar el tipo de vendedor alemán (privado/profesional) para el IVA, inferir el modelo de los "Andere" desde el título, decidir si se sube el tope de 4 páginas.
