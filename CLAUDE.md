@@ -58,6 +58,8 @@ Estados: `calculando` → `listo` | `error`; al arrancar, un `calculando` huérf
 
 **Ocultar y Top 20:** cada ficha tiene «Ocultar» (`Car.oculto`, PATCH `{oculto}`): no se borra porque la sync recrearía el anuncio; se oculta también su grupo de duplicados; «Mostrar ocultos» en los filtros lo recupera y la interfaz ofrece «Deshacer» 8 s. «Analizar Top 20» (`POST /api/cars/analizar-top?n=20` + los filtros de la lista; avance en `GET /api/cars/analizar-top/status`, estado en memoria) analiza de uno en uno los 20 primeros de la lista, saltando ocultos, «Andere» y los que ya tienen informe al día; todos quedan «calculando» al empezar. Cuesta ~2.000 tokens de IA y ~20 s por coche. El endpoint es `async` (necesita el bucle de eventos para `create_task`).
 
+**Servidor MCP** (`backend/mcp_server.py`, SDK `mcp` 2.x: `MCPServer` y `ToolError`, no `FastMCP` de la 1.x): capa fina por stdio sobre la API local, sin acceso directo a la base; el backend tiene que estar en marcha. Herramientas: `listar_coches` (filtros marca, modelo, cambio, fuente, `precio_max`, `km_max`, `anio_desde`, días, estado), `ver_coche`, `estado_sync` y `analizar_rentabilidad` (la única que gasta IA; espera hasta ~2 min). Solo estas: no cambia estados, notas ni oculta. En MCP 2.x una excepción cualquiera llega a Claude como «Error executing tool X» sin texto: los fallos previstos se lanzan como `ToolError`. `scripts/config-mcp.sh` imprime la configuración para Claude Code y Claude Desktop con las rutas de esta máquina. Claude en la web no llega a `localhost`.
+
 **Migraciones:** `database.ensure_columns()` añade al arrancar las columnas nuevas a una base existente (`create_all` no altera tablas). Al añadir una columna al modelo, registrarla en `_ADDED_COLUMNS`.
 
 **Sync y scoring:**

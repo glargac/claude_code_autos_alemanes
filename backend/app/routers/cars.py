@@ -47,9 +47,13 @@ def _filtros(
     publicado_dias: int | None = None,
     inaktiv_anzeigen: bool = False,
     mostrar_ocultos: bool = False,
+    precio_max: int | None = None,
+    km_max: int | None = None,
+    anio_desde: int | None = None,
 ) -> dict:
     return dict(fuente=fuente, marke=marke, modell=modell, getriebe=getriebe, status=status,
-                publicado_dias=publicado_dias, inaktiv_anzeigen=inaktiv_anzeigen, mostrar_ocultos=mostrar_ocultos)
+                publicado_dias=publicado_dias, inaktiv_anzeigen=inaktiv_anzeigen, mostrar_ocultos=mostrar_ocultos,
+                precio_max=precio_max, km_max=km_max, anio_desde=anio_desde)
 
 
 def _consulta(f: dict):
@@ -70,6 +74,12 @@ def _consulta(f: dict):
         q = q.where(Car.status == f["status"].value)
     if f["publicado_dias"]:
         q = q.where(Car.veroeffentlicht_am >= datetime.utcnow() - timedelta(days=f["publicado_dias"]))
+    if f.get("precio_max"):
+        q = q.where(Car.preis <= f["precio_max"])
+    if f.get("km_max"):
+        q = q.where(Car.kilometer <= f["km_max"])
+    if f.get("anio_desde"):
+        q = q.where(Car.erstzulassung >= f["anio_desde"])
     return q
 
 
