@@ -3,6 +3,7 @@
     python -m app.maintenance purge-damaged [--dry-run]
     python -m app.maintenance fix-models [--dry-run]   # corrige el modelo desde el título donde lo contradice
     python -m app.maintenance verify-stale [--dry-run] [--horas 12]
+    python -m app.maintenance backfill-co2 [--dry-run] [--limite N]   # CO2 de los AutoScout24 ya guardados
     python -m app.maintenance probar-ia          # comprueba la clave y el modelo de IA con una petición mínima
     python -m app.maintenance gemini-models      # lista los modelos de Gemini que acepta tu clave
 
@@ -67,6 +68,40 @@ async def verify_stale(horas: float = 12, dry_run: bool = False) -> dict:
                 "con_seguimiento_retirados": [(c.id, c.titel[:40], c.status) for c in retirados if has_followup(c)]}
 
 
+async def backfill_co2(dry_run: bool = False, limite: int | None = None) -> dict:
+    """Pide el detalle de los AutoScout24 activos sin CO₂ guardado (la sync solo lo pide para anuncios nuevos).
+    Una petición cada 1,5-3 s; ~800 coches tardan ~30 min. Los que ya no existen se dejan como están."""
+    from .scrapers.autoscout24 import AutoScout24Scraper, parse_detail
+
+    ensure_columns()
+    with SessionLocal() as db:
+        rows = db.scalars(select(Car).where(Car.source == "autoscout24", Car.aktiv.is_(True), Car.co2_gkm.is_(None))).all()[:limite]
+        if dry_run:
+            return {"se_consultarían": len(rows)}
+        s, con_co2, sin_dato, fallos = AutoScout24Scraper(), 0, 0, 0
+        async with s._context() as ctx:
+            page = await ctx.new_page()
+            for i, car in enumerate(rows, 1):
+                try:
+                    props, final = await s._props(page, car.url, gone_ok=True)
+                except Exception as exc:  # un fallo suelto no corta el resto; un bloqueo sí (HTTP de error)
+                    fallos += 1
+                    if isinstance(exc, RuntimeError) or fallos >= 10:
+                        print(f"Se detiene: {exc}")
+                        break
+                    continue
+                if "/angebote/" in final and (co2 := parse_detail(props).get("co2_gkm")):
+                    car.co2_gkm, con_co2 = co2, con_co2 + 1
+                else:
+                    sin_dato += 1
+                if i % 25 == 0:
+                    db.commit()
+                    print(f"  {i}/{len(rows)}")
+                await s._pause()
+        db.commit()
+        return {"consultados": len(rows), "con_co2": con_co2, "sin_dato": sin_dato, "fallos": fallos}
+
+
 async def purge_damaged(dry_run: bool = False) -> dict:
     ensure_columns()
     with SessionLocal() as db:
@@ -92,8 +127,9 @@ async def purge_damaged(dry_run: bool = False) -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("task", choices=["purge-damaged", "verify-stale", "fix-models", "probar-ia", "gemini-models"])
+    parser.add_argument("task", choices=["purge-damaged", "verify-stale", "fix-models", "backfill-co2", "probar-ia", "gemini-models"])
     parser.add_argument("--horas", type=float, default=12, help="verify-stale: antigüedad mínima desde que se vio por última vez")
+    parser.add_argument("--limite", type=int, default=None, help="backfill-co2: máximo de coches a consultar")
     parser.add_argument("--dry-run", action="store_true", help="solo cuenta, no borra")
     args = parser.parse_args()
     if args.task == "purge-damaged":
@@ -105,6 +141,8 @@ if __name__ == "__main__":
             print("  ", d)
     elif args.task == "verify-stale":
         print(asyncio.run(verify_stale(args.horas, args.dry_run)))
+    elif args.task == "backfill-co2":
+        print(asyncio.run(backfill_co2(args.dry_run, args.limite)))
     elif args.task == "probar-ia":
         from .services import llm
 

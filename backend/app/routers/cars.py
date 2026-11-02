@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Car, Status
-from ..schemas import CarOut, CarUpdate, OtroEnlace
+from ..schemas import CarOut, CarUpdate, EliminarIn, OtroEnlace
 from ..services import rentabilidad as rentabilidad_service
 from ..services.scoring import color_for
 from ..services.settings_store import get_setting
@@ -46,13 +46,12 @@ def _filtros(
     status: Status | None = None,
     publicado_dias: int | None = None,
     inaktiv_anzeigen: bool = False,
-    mostrar_ocultos: bool = False,
     precio_max: int | None = None,
     km_max: int | None = None,
     anio_desde: int | None = None,
 ) -> dict:
     return dict(fuente=fuente, marke=marke, modell=modell, getriebe=getriebe, status=status,
-                publicado_dias=publicado_dias, inaktiv_anzeigen=inaktiv_anzeigen, mostrar_ocultos=mostrar_ocultos,
+                publicado_dias=publicado_dias, inaktiv_anzeigen=inaktiv_anzeigen,
                 precio_max=precio_max, km_max=km_max, anio_desde=anio_desde)
 
 
@@ -60,8 +59,7 @@ def _consulta(f: dict):
     q = select(Car).where(Car.duplicado_de.is_(None)).order_by(Car.score.desc().nulls_last())  # los duplicados cuelgan de su principal
     if not f["inaktiv_anzeigen"]:
         q = q.where(Car.aktiv.is_(True))
-    if not f["mostrar_ocultos"]:
-        q = q.where(Car.oculto.is_(False))
+    q = q.where(Car.oculto.is_(False))  # «Eliminar» del usuario: no se borra la fila (la sync la recrearía), no se muestra más
     if f["fuente"]:
         q = q.where(Car.source == f["fuente"])
     if f["marke"]:
@@ -95,14 +93,29 @@ def list_cars(f: dict = Depends(_filtros), db: Session = Depends(get_db)):
 @router.post("/analizar-top", status_code=202)
 async def analizar_top(n: int = Query(20, ge=1, le=50), f: dict = Depends(_filtros), db: Session = Depends(get_db)):
     """Lanza «Analizar rentabilidad» en segundo plano para los N primeros coches de la lista (mismos filtros que la
-    lista, ocultos fuera), de uno en uno. Se saltan los que ya tienen informe al día y los «Andere» (sin modelo)."""
-    coches = db.scalars(_consulta({**f, "mostrar_ocultos": False}).limit(n)).all()
+    lista), de uno en uno. Se saltan los que ya tienen informe al día y los «Andere» (sin modelo)."""
+    coches = db.scalars(_consulta(f).limit(n)).all()
     return dict(rentabilidad_service.iniciar_lote(db, coches))
 
 
 @router.get("/analizar-top/status")
 def analizar_top_status():
     return dict(rentabilidad_service.lote)
+
+
+@router.post("/eliminar")
+def eliminar(body: EliminarIn, db: Session = Depends(get_db)):
+    """Elimina coches de la lista para siempre. La fila se conserva marcada (`oculto`): si se borrara, la próxima sync
+    volvería a crear el anuncio. Su grupo de duplicados se elimina con él."""
+    cars = db.scalars(select(Car).where(Car.id.in_(body.ids))).all()
+    if not cars:
+        raise HTTPException(404, "Ningún auto encontrado")
+    for car in cars:
+        car.oculto = True
+        for d in _others(db, [car.id]).get(car.id, []):
+            d.oculto = True
+    db.commit()
+    return {"eliminados": len(cars)}
 
 
 @router.patch("/{car_id}", response_model=CarOut)
@@ -120,10 +133,6 @@ def update_car(car_id: int, body: CarUpdate, db: Session = Depends(get_db)):
         car.termin_am = body.termin_am
     if body.notizen is not None:
         car.notizen = body.notizen
-    if body.oculto is not None:  # el grupo de duplicados se oculta o se muestra junto
-        car.oculto = body.oculto
-        for d in _others(db, [car.id]).get(car.id, []):
-            d.oculto = body.oculto
     db.commit()
     return _out(car, get_setting(db, "weights"), _others(db, [car.id]), _hash(db))
 

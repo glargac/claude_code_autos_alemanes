@@ -4,7 +4,7 @@ import CarCard, { SOURCE_LABEL, STATUSES } from "./CarCard.jsx";
 import Settings from "./Settings.jsx";
 
 const MARKEN = ["Mercedes-Benz", "BMW", "Audi", "Volkswagen", "Porsche"];
-const EMPTY_FILTERS = { fuente: "", marke: "", modell: "", getriebe: "", status: "", publicado_dias: "", inaktiv_anzeigen: false, mostrar_ocultos: false };
+const EMPTY_FILTERS = { fuente: "", marke: "", modell: "", getriebe: "", status: "", publicado_dias: "", inaktiv_anzeigen: false };
 const sel = "rounded-lg bg-slate-900 px-3 py-1.5 text-sm ring-1 ring-slate-700";
 
 function Filters({ filters, setFilters, count }) {
@@ -40,10 +40,6 @@ function Filters({ filters, setFilters, count }) {
       <label className="flex items-center gap-2 text-sm text-slate-400">
         <input type="checkbox" checked={filters.inaktiv_anzeigen} onChange={(e) => set("inaktiv_anzeigen", e.target.checked)} />
         Incluir vendidos
-      </label>
-      <label className="flex items-center gap-2 text-sm text-slate-400">
-        <input type="checkbox" checked={filters.mostrar_ocultos} onChange={(e) => set("mostrar_ocultos", e.target.checked)} />
-        Mostrar ocultos
       </label>
       {dirty && (
         <button onClick={() => setFilters(EMPTY_FILTERS)} className="text-sm text-sky-400">
@@ -129,7 +125,7 @@ function SyncBanner({ sync }) {
 const TOP_N = 20;
 const SIN_MODELO = /^(andere|sonstige|sonstiges|other)?$/;
 const necesitaAnalisis = (c) =>
-  !c.oculto && c.preis && c.erstzulassung && !SIN_MODELO.test(c.modell.toLowerCase().replace(/[\s_-]+/g, "")) &&
+  c.preis && c.erstzulassung && !SIN_MODELO.test(c.modell.toLowerCase().replace(/[\s_-]+/g, "")) &&
   !(c.rentabilidad && (c.rentabilidad.estado === "calculando" || (c.rentabilidad.estado === "listo" && !c.rentabilidad.desactualizado)));
 
 function LoteBanner({ lote, fin, onClose }) {
@@ -171,7 +167,9 @@ export default function App() {
   const [lote, setLote] = useState({ running: false });
   const [loteFin, setLoteFin] = useState(false);
   const wasLote = useRef(false);
-  const [deshacer, setDeshacer] = useState(null);
+  const [seleccion, setSeleccion] = useState(() => new Set());  // ids marcados con la casilla
+  const [porEliminar, setPorEliminar] = useState(null);  // coches pendientes de confirmar en la ventana
+  const [eliminando, setEliminando] = useState(false);
 
   const load = useCallback(() => api.cars(filters).then(setCars).catch(console.error), [filters]);
 
@@ -222,7 +220,7 @@ export default function App() {
     return () => clearInterval(id);
   }, [lote.running, load]);
 
-  const pendientes = cars.filter((c) => !c.oculto).slice(0, TOP_N).filter(necesitaAnalisis).length;
+  const pendientes = cars.slice(0, TOP_N).filter(necesitaAnalisis).length;
 
   const runTop = async () => {
     if (!confirm(`Analizar la rentabilidad de los ${TOP_N} mejores coches de la lista.\n\n${pendientes} necesitan análisis (el resto ya está al día o no tiene modelo).\nTarda unos ${Math.max(1, Math.round(pendientes / 3))} min y usa la IA (~2.000 tokens por coche, ~${(pendientes * 2).toLocaleString("de-DE")}.000 en total).`)) return;
@@ -236,15 +234,28 @@ export default function App() {
   };
 
   const onCarChange = (upd) => {
-    const prev = cars.find((x) => x.id === upd.id);
-    if (upd.oculto && !filters.mostrar_ocultos) {
-      setCars((list) => list.filter((x) => x.id !== upd.id));
-      if (prev && !prev.oculto) {
-        setDeshacer({ id: upd.id, nombre: `${upd.marke} ${upd.modell}` });
-        setTimeout(() => setDeshacer((d) => (d?.id === upd.id ? null : d)), 8000);
-      }
-    } else {
-      setCars((list) => list.map((x) => (x.id === upd.id ? upd : x)));
+    setCars((list) => list.map((x) => (x.id === upd.id ? upd : x)));
+  };
+
+  const toggleSel = (id) =>
+    setSeleccion((s) => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+
+  const confirmarEliminar = async () => {
+    const ids = porEliminar.map((c) => c.id);
+    setEliminando(true);
+    try {
+      await api.eliminar(ids);
+      setCars((list) => list.filter((x) => !ids.includes(x.id)));
+      setSeleccion((s) => new Set([...s].filter((id) => !ids.includes(id))));
+      setPorEliminar(null);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setEliminando(false);
     }
   };
 
@@ -284,16 +295,28 @@ export default function App() {
 
       <SyncBanner sync={sync} />
       <LoteBanner lote={lote} fin={loteFin} onClose={() => setLoteFin(false)} />
-      {deshacer && (
-        <p className="flex items-center justify-between rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-200">
-          <span>{deshacer.nombre} oculto de tu lista.</span>
-          <button
-            onClick={() => api.updateCar(deshacer.id, { oculto: false }).then(() => { setDeshacer(null); load(); }).catch((e) => alert(e.message))}
-            className="ml-3 text-sky-400"
-          >
-            Deshacer
-          </button>
-        </p>
+      {porEliminar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-xl bg-slate-900 p-6 ring-1 ring-slate-700">
+            <h2 className="text-lg font-semibold">¿Está seguro de eliminar {porEliminar.length === 1 ? "este auto" : "estos autos"}?</h2>
+            <ul className="mt-3 max-h-48 space-y-1 overflow-y-auto text-sm text-slate-300">
+              {porEliminar.map((c) => (
+                <li key={c.id}>
+                  {c.marke} {c.modell} · {c.erstzulassung} · {c.preis?.toLocaleString("de-DE")} €
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-slate-500">Desaparecerán de la lista y no volverán a aparecer en las próximas actualizaciones.</p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => setPorEliminar(null)} disabled={eliminando} className="rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">
+                Cancelar
+              </button>
+              <button onClick={confirmarEliminar} disabled={eliminando} className="rounded-lg bg-red-600 px-4 py-2 text-sm hover:bg-red-500 disabled:opacity-50">
+                {eliminando ? "Eliminando…" : "Aceptar"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {tab === "dashboard" ? (
@@ -310,9 +333,31 @@ export default function App() {
             </button>
             {!lote.running && pendientes > 0 && <span className="text-xs text-slate-500">{pendientes} por analizar</span>}
           </div>
+          <div className="flex items-center gap-3 text-sm">
+            <label className="flex items-center gap-2 text-slate-400">
+              <input
+                type="checkbox"
+                className="accent-red-500"
+                checked={cars.length > 0 && cars.every((c) => seleccion.has(c.id))}
+                onChange={(e) => setSeleccion(e.target.checked ? new Set(cars.map((c) => c.id)) : new Set())}
+              />
+              Seleccionar todos
+            </label>
+            {seleccion.size > 0 && (
+              <>
+                <span className="text-slate-400">{seleccion.size} seleccionados</span>
+                <button
+                  onClick={() => setPorEliminar(cars.filter((c) => seleccion.has(c.id)))}
+                  className="rounded-lg bg-red-700 px-3 py-1 hover:bg-red-600"
+                >
+                  Eliminar seleccionados
+                </button>
+              </>
+            )}
+          </div>
           {cars.length === 0 && <p className="text-slate-400">Sin resultados. Ajusta los filtros o pulsa Sincronizar.</p>}
           {cars.map((c) => (
-            <CarCard key={c.id} car={c} onChange={onCarChange} />
+            <CarCard key={c.id} car={c} onChange={onCarChange} selected={seleccion.has(c.id)} onSelect={toggleSel} onDelete={setPorEliminar} />
           ))}
         </>
       ) : (

@@ -22,6 +22,7 @@ from ..models import Car, MercadoCache
 from . import llm
 from ..scrapers.kleinanzeigen import motivo_retirada
 from .mercado_es import MercadoES, _norm
+from .matriculacion import estimar_co2, tipo_por_co2
 from .modelo import conflicto_modelo
 from .settings_store import get_setting
 
@@ -40,7 +41,7 @@ def precio_referencia(mercado: dict, perfil: str) -> tuple[float, str]:
     return mercado["mediana"], "todos los anuncios"
 
 
-def _escenario(precio_anuncio_es: float, precio_de: float, a: dict) -> dict:
+def _escenario(precio_anuncio_es: float, precio_de: float, a: dict, co2: tuple[int | None, str] = (None, "sin datos")) -> dict:
     """Margen neto para un precio de anuncio en España. Devuelve también las líneas del desglose (suman el margen)."""
     empresa = a["perfil"] == "empresa"
     iva_es, iva_de = a["iva_es_pct"] / 100, a["iva_de_pct"] / 100
@@ -57,11 +58,17 @@ def _escenario(precio_anuncio_es: float, precio_de: float, a: dict) -> dict:
         compra = compra_bruta
         rebu = empresa and a["iva_reventa"] == "rebu"
 
-    matriculacion = compra * a["impuesto_matriculacion_pct"] / 100
+    co2_gkm, co2_origen = co2
+    if co2_gkm:
+        tipo, etiqueta = tipo_por_co2(co2_gkm), f"{co2_gkm} g/km de CO₂, {co2_origen}"
+    else:
+        tipo, etiqueta = a["impuesto_matriculacion_pct"], "CO₂ desconocido: porcentaje fijo de Ajustes"
+        avisos.append("No consta el CO₂ de este coche: el impuesto de matriculación usa el porcentaje fijo de Ajustes.")
+    matriculacion = compra * tipo / 100
     costes = {
         "Transporte a la Costa del Sol": a["transporte"],
         "Gestoría, tasa DGT, ITV de importación y placas": a["gestoria_matriculacion"],
-        f"Impuesto de matriculación ({a['impuesto_matriculacion_pct']:g} % de la compra)": matriculacion,
+        f"Impuesto de matriculación ({tipo:g} % de la compra; {etiqueta})": matriculacion,
         "Preparación y pequeñas reparaciones": a["preparacion"],
         "Seguro y placas de tránsito": a["seguro_y_placas_transito"],
         "Gastos de venta (anuncios)": a["gastos_venta"],
@@ -100,13 +107,14 @@ def veredicto_numerico(margen: float, roi_pct: float | None, confianza: str, a: 
     return "Dudoso" if margen >= a["margen_dudoso_eur"] else "Descartar"
 
 
-def calcular_margen(precio_de: int, mercado: dict, ajustes: dict, avisos: list[str] | None = None) -> dict:
+def calcular_margen(precio_de: int, mercado: dict, ajustes: dict, avisos: list[str] | None = None,
+                    co2: tuple[int | None, str] = (None, "sin datos")) -> dict:
     """Margen neto estimado (central, pesimista con P25 y optimista con P75 del mercado español)."""
     ref, ref_fuente = precio_referencia(mercado, ajustes["perfil"])
     escala = ref / mercado["mediana"]  # traslada el rango P25-P75 al precio de referencia elegido
-    central = _escenario(ref, precio_de, ajustes)
-    pesimista = _escenario(mercado["p25"] * escala, precio_de, ajustes)
-    optimista = _escenario(mercado["p75"] * escala, precio_de, ajustes)
+    central = _escenario(ref, precio_de, ajustes, co2)
+    pesimista = _escenario(mercado["p25"] * escala, precio_de, ajustes, co2)
+    optimista = _escenario(mercado["p75"] * escala, precio_de, ajustes, co2)
     return {
         "perfil": ajustes["perfil"],
         "precio_de": precio_de,
@@ -120,7 +128,7 @@ def calcular_margen(precio_de: int, mercado: dict, ajustes: dict, avisos: list[s
     }
 
 
-METODO_VERSION = 3  # sube al cambiar cómo se estima el mercado: los informes antiguos pasan a «desactualizados»
+METODO_VERSION = 4  # sube al cambiar cómo se estima el mercado: los informes antiguos pasan a «desactualizados»
 
 
 def hash_ajustes(ajustes: dict) -> str:
@@ -226,7 +234,7 @@ async def _analizar(car_id: int) -> None:
             if conflicto:  # el mercado es de otro modelo: la confianza baja siempre (la caché no se toca: se copia)
                 motivos = [m for m in (conflicto, mercado.get("confianza_motivo")) if m]
                 mercado = {**mercado, "confianza": "baja", "confianza_motivo": " · ".join(motivos)}
-            calculo = calcular_margen(car.preis, mercado, ajustes, [conflicto] if conflicto else None)
+            calculo = calcular_margen(car.preis, mercado, ajustes, [conflicto] if conflicto else None, estimar_co2(db, car))
             informe, aviso_ia = None, None
             if llm.enabled():
                 prompt = llm.build_report_prompt(_coche(car), _calculo_txt(calculo), _mercado_txt(mercado, calculo), ajustes["perfil"])

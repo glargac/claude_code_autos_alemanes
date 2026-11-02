@@ -34,6 +34,7 @@ class Car(Base):
     erstzulassung: Mapped[int | None] = mapped_column(Integer)
     erstzulassung_monat: Mapped[int | None] = mapped_column(Integer)
     kilometer: Mapped[int | None] = mapped_column(Integer)
+    co2_gkm: Mapped[int | None] = mapped_column(Integer)  # g/km combinado (solo AutoScout24 lo publica)
     preis: Mapped[int | None] = mapped_column(Integer)
     kraftstoffart: Mapped[str | None] = mapped_column(String(30))
     getriebe: Mapped[str | None] = mapped_column(String(30), index=True)
@@ -57,7 +58,7 @@ class Car(Base):
     # Informe de "Analizar rentabilidad" (bajo demanda): estado, mercado en España, cálculo de margen e informe de IA
     rentabilidad: Mapped[dict | None] = mapped_column(JSON)
     duplicado_de: Mapped[int | None] = mapped_column(Integer, index=True)
-    # Oculto por el usuario de la lista principal (no se borra: la sync lo recrearía). Reversible.
+    # «Eliminado» por el usuario (botón Eliminar): la fila se conserva para que la sync no recree el anuncio.
     oculto: Mapped[bool] = mapped_column(default=False, index=True)
     erstmals_gesehen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     zuletzt_gesehen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

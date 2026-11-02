@@ -134,6 +134,17 @@ def _html_to_text(html: str) -> str:
     return BeautifulSoup((html or "").replace("<br />", "\n").replace("<br>", "\n"), "lxml").get_text("\n", strip=True)
 
 
+def _co2(v: dict) -> int | None:
+    """CO₂ combinado WLTP (el ponderado en híbridos enchufables) o, si no hay, el NEDC antiguo."""
+    wltp = v.get("wltp") or {}
+    for campo in (wltp.get("co2EmissionsCombinedWeightedWithFallback"), wltp.get("co2EmissionsCombinedWithFallback"),
+                  v.get("co2emissionInGramPerKmWithFallback")):
+        raw = (campo or {}).get("raw")
+        if isinstance(raw, (int, float)) and 0 < raw < 600:
+            return round(raw)
+    return None
+
+
 def parse_detail(props: dict) -> dict:
     """Atributos que no vienen en la lista. Devuelve {} si el anuncio ya no está activo."""
     d = props.get("listingDetails") or {}
@@ -154,6 +165,8 @@ def parse_detail(props: dict) -> dict:
     }
     if desc:
         out["beschreibung"] = desc
+    if co2 := _co2(v):
+        out["co2_gkm"] = co2
     if m := re.fullmatch(r"(\d{2})/(\d{4})", v.get("nextVehicleSafetyInspection") or ""):
         out["tuev_bis"] = f"{m.group(2)}-{m.group(1)}"
     elif v.get("newInspection"):

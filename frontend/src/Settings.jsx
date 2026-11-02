@@ -198,7 +198,7 @@ export default function Settings({ onSaved, onRun, syncRunning }) {
           <Field label="Gestoría, tasa DGT, ITV de importación, placas (€)">
             <input type="number" step="50" min="0" className={input} value={rent.gestoria_matriculacion} onChange={(e) => setRNum("gestoria_matriculacion", e.target.value)} />
           </Field>
-          <Field label="Impuesto de matriculación (% de la compra)">
+          <Field label="Impuesto de matriculación si no se conoce el CO₂ (% de la compra)">
             <input type="number" step="0.25" min="0" className={input} value={rent.impuesto_matriculacion_pct} onChange={(e) => setRNum("impuesto_matriculacion_pct", e.target.value)} />
           </Field>
           <Field label="Preparación y pequeñas reparaciones (€)">

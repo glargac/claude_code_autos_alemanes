@@ -31,6 +31,7 @@ class CarOut(BaseModel):
     titel: str
     erstzulassung: int | None
     kilometer: int | None
+    co2_gkm: int | None = None
     preis: int | None
     kraftstoffart: str | None
     getriebe: str | None
@@ -44,7 +45,6 @@ class CarOut(BaseModel):
     termin_am: datetime | None
     notizen: str
     aktiv: bool
-    oculto: bool = False
     farbe: str = "gris"
     otros_enlaces: list[OtroEnlace] = []
     rentabilidad: dict | None = None
@@ -54,7 +54,10 @@ class CarUpdate(BaseModel):
     status: Status | None = None
     termin_am: datetime | None = None
     notizen: str | None = None
-    oculto: bool | None = None
+
+
+class EliminarIn(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=500)
 
 
 class SearchSettings(BaseModel):

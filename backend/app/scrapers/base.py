@@ -20,6 +20,7 @@ class ScrapedCar:
     erstzulassung: int | None = None
     erstzulassung_monat: int | None = None  # decide los años en que cambió la generación del modelo
     kilometer: int | None = None
+    co2_gkm: int | None = None
     preis: int | None = None
     kraftstoffart: str | None = None
     getriebe: str | None = None

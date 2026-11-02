@@ -48,7 +48,7 @@ DEFAULT_RENTABILIDAD = {
     "descuento_compra_pct": 0.0,  # negociación a la baja del precio pedido en Alemania
     "transporte": 800,  # Alemania -> Costa del Sol
     "gestoria_matriculacion": 450,  # gestoría, tasa DGT, ITV de importación, ficha reducida, placas
-    "impuesto_matriculacion_pct": 4.75,  # sobre el precio de compra; tramos por CO2: <120 g/km 0 %, 120-159 4,75 %, 160-199 9,75 %, >=200 14,75 %
+    "impuesto_matriculacion_pct": 4.75,  # solo si no se conoce el CO2 del coche; si se conoce, `services/matriculacion.py` aplica los tramos (<120 g/km 0 %, 120-159 4,75 %, 160-199 9,75 %, >=200 14,75 %)
     "preparacion": 400,  # limpieza, revisión, neumáticos, pequeñas reparaciones
     "seguro_y_placas_transito": 150,
     "gastos_venta": 150,  # anuncios, portales

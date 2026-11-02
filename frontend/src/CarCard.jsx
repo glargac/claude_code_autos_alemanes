@@ -121,7 +121,7 @@ function Crm({ car, onChange }) {
   );
 }
 
-export default function CarCard({ car, onChange }) {
+export default function CarCard({ car, onChange, selected, onSelect, onDelete }) {
   const [open, setOpen] = useState(false);
   const [informe, setInforme] = useState(false);
   const ring =
@@ -130,22 +130,18 @@ export default function CarCard({ car, onChange }) {
       : car.status === "Abgelehnt"
         ? "ring-2 ring-red-500 opacity-70"
         : "ring-1 ring-slate-800";
-  const [ocultando, setOcultando] = useState(false);
-  const ocultar = async (oculto) => {
-    setOcultando(true);
-    try {
-      onChange(await api.updateCar(car.id, { oculto }));
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      setOcultando(false);
-    }
-  };
   const published = fmtDate(car.veroeffentlicht_am);
 
   return (
-    <article className={`rounded-xl bg-slate-900 p-4 ${ring} ${car.oculto ? "opacity-50" : ""}`}>
+    <article className={`rounded-xl bg-slate-900 p-4 ${ring} ${selected ? "outline outline-2 outline-red-500" : ""}`}>
       <div className="flex gap-4">
+        <input
+          type="checkbox"
+          checked={!!selected}
+          onChange={() => onSelect(car.id)}
+          aria-label="Seleccionar para eliminar"
+          className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-red-500"
+        />
         {car.image_url && <img src={car.image_url} alt="" className="h-28 w-40 shrink-0 rounded-lg object-cover" />}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -164,7 +160,6 @@ export default function CarCard({ car, onChange }) {
             <span className={`rounded px-1.5 py-0.5 text-[11px] ring-1 ${SOURCE_STYLE[car.source] ?? "ring-slate-700"}`}>
               {SOURCE_LABEL[car.source] ?? car.source}
             </span>
-            {car.oculto && <span className="rounded-full bg-slate-600 px-2 py-0.5 text-xs">Oculto</span>}
             {!car.aktiv && <span className="rounded-full bg-slate-600 px-2 py-0.5 text-xs">Verkauft / Inaktiv</span>}
             <RentabilidadBadge r={car.rentabilidad} />
           </div>
@@ -187,12 +182,11 @@ export default function CarCard({ car, onChange }) {
               {open ? "Cerrar seguimiento" : car.notizen ? "Seguimiento · con notas" : "Seguimiento"}
             </button>
             <button
-              disabled={ocultando}
-              onClick={() => ocultar(!car.oculto)}
-              title={car.oculto ? "Volver a mostrarlo en tu lista" : "Quitarlo de tu lista (se puede recuperar con «Mostrar ocultos»)"}
-              className="text-slate-500 hover:text-red-400 disabled:opacity-50"
+              onClick={() => onDelete([car])}
+              title="Quitarlo de tu lista para siempre (no volverá a aparecer en las próximas actualizaciones)"
+              className="text-slate-500 hover:text-red-400"
             >
-              {car.oculto ? "Mostrar de nuevo" : "Ocultar"}
+              Eliminar
             </button>
             <RentabilidadButton car={car} onChange={onChange} onFinished={() => setInforme(true)} />
             {car.rentabilidad && car.rentabilidad.estado !== "calculando" && (
