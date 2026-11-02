@@ -45,6 +45,7 @@ class CarOut(BaseModel):
     termin_am: datetime | None
     notizen: str
     aktiv: bool
+    furgoneta: bool = False
     farbe: str = "gris"
     otros_enlaces: list[OtroEnlace] = []
     rentabilidad: dict | None = None
@@ -73,6 +74,7 @@ class SearchSettings(BaseModel):
     kilometer_bis: int = Field(ge=0)
     kraftstoffart: list[Literal["Benzin", "Diesel"]] = Field(min_length=1)
     getriebe: Literal["", "Automatik", "Manuell"] = ""
+    buscar_furgonetas: bool = True  # búsqueda propia de Vito, Sprinter, Citan, Caddy, Transporter y Crafter
 
     @model_validator(mode="after")
     def ranges_ordered(self):

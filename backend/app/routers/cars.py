@@ -46,12 +46,13 @@ def _filtros(
     status: Status | None = None,
     publicado_dias: int | None = None,
     inaktiv_anzeigen: bool = False,
+    furgonetas: Literal["", "solo", "sin"] = "",
     precio_max: int | None = None,
     km_max: int | None = None,
     anio_desde: int | None = None,
 ) -> dict:
     return dict(fuente=fuente, marke=marke, modell=modell, getriebe=getriebe, status=status,
-                publicado_dias=publicado_dias, inaktiv_anzeigen=inaktiv_anzeigen,
+                publicado_dias=publicado_dias, inaktiv_anzeigen=inaktiv_anzeigen, furgonetas=furgonetas,
                 precio_max=precio_max, km_max=km_max, anio_desde=anio_desde)
 
 
@@ -60,6 +61,10 @@ def _consulta(f: dict):
     if not f["inaktiv_anzeigen"]:
         q = q.where(Car.aktiv.is_(True))
     q = q.where(Car.oculto.is_(False))  # «Eliminar» del usuario: no se borra la fila (la sync la recrearía), no se muestra más
+    if f.get("furgonetas") == "solo":
+        q = q.where(Car.furgoneta.is_(True))
+    elif f.get("furgonetas") == "sin":
+        q = q.where(Car.furgoneta.is_(False))
     if f["fuente"]:
         q = q.where(Car.source == f["fuente"])
     if f["marke"]:

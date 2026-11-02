@@ -127,6 +127,12 @@ export default function Settings({ onSaved, onRun, syncRunning }) {
               <option>Manuell</option>
             </select>
           </Field>
+          <Field label="Furgonetas">
+            <label className="flex items-center gap-2 py-2 text-sm" title="Vito, Sprinter, Citan, Caddy, Transporter y Crafter se buscan por su nombre además de la marca; si no, llegan muy pocas">
+              <input type="checkbox" checked={search.buscar_furgonetas ?? true} onChange={(e) => setS("buscar_furgonetas", e.target.checked)} />
+              Buscar furgonetas por modelo
+            </label>
+          </Field>
           <Field label="Kraftstoffart">
             <div className="flex gap-4 py-2">
               {KRAFTSTOFF.map((f) => (

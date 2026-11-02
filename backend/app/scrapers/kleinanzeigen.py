@@ -21,7 +21,7 @@ from playwright.async_api import BrowserContext, async_playwright
 
 from playwright.async_api import Error as PlaywrightError
 
-from .base import Progress, ScrapedCar, Scraper, check_failure_rate, retry
+from .base import Progress, ScrapedCar, Scraper, check_failure_rate, consultas, retry
 
 BASE = "https://www.kleinanzeigen.de"
 UA = (
@@ -74,6 +74,15 @@ def veredicto_pagina(status: int, url_final: str, html: str) -> bool | None:
     if "/s-anzeige/" not in url_final:  # redirige a la lista de búsqueda
         return True
     return esta_no_disponible(html)
+
+
+_MARCA_EN_TITULO = {"Mercedes-Benz": ("mercedes", "benz"), "Volkswagen": ("volkswagen", "vw"), "BMW": ("bmw",), "Audi": ("audi",),
+                    "Porsche": ("porsche",)}
+
+
+def _marca_en_titulo(titel: str, marke: str) -> bool:
+    t = (titel or "").lower()
+    return any(re.search(rf"\b{a}\b" if a == "vw" else a, t) for a in _MARCA_EN_TITULO.get(marke, (marke.lower(),)))
 
 
 def _slug(text: str) -> str:
@@ -230,20 +239,23 @@ class KleinanzeigenScraper(Scraper):
         async with self._context() as ctx:
             loc_id = await self._resolve_location(ctx, params["ort_oder_plz"])
             page = await ctx.new_page()
-            marken = params["marken"]
+            marken = consultas(params)
             report("listas", 0, len(marken))
             failed_brands = 0
-            for i, marke in enumerate(marken, 1):
+            for i, (marke, modell_q) in enumerate(marken, 1):
+                qparams = {**params, "modell": modell_q}
                 n = 1
                 try:
                     for n in range(1, MAX_PAGES + 1):
-                        async def load(n=n):
-                            await page.goto(build_url(params, marke, loc_id, n), wait_until="domcontentloaded")
+                        async def load(n=n, qparams=qparams, marke=marke):
+                            await page.goto(build_url(qparams, marke, loc_id, n), wait_until="domcontentloaded")
                             await page.wait_for_selector("article[data-adid], h1", timeout=30000)
 
                         await retry(load)
                         cars = parse_listing(await page.content(), marke)
                         for c in cars:
+                            if modell_q and not _marca_en_titulo(c.titel, marke):
+                                continue  # la búsqueda por modelo es de texto libre y a veces devuelve coches de otra marca
                             results.setdefault(c.external_id, c)
                         if len(cars) < 25:
                             break

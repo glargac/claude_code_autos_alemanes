@@ -4,7 +4,7 @@ import CarCard, { SOURCE_LABEL, STATUSES } from "./CarCard.jsx";
 import Settings from "./Settings.jsx";
 
 const MARKEN = ["Mercedes-Benz", "BMW", "Audi", "Volkswagen", "Porsche"];
-const EMPTY_FILTERS = { fuente: "", marke: "", modell: "", getriebe: "", status: "", publicado_dias: "", inaktiv_anzeigen: false };
+const EMPTY_FILTERS = { fuente: "", marke: "", modell: "", getriebe: "", status: "", publicado_dias: "", furgonetas: "", inaktiv_anzeigen: false };
 const sel = "rounded-lg bg-slate-900 px-3 py-1.5 text-sm ring-1 ring-slate-700";
 
 function Filters({ filters, setFilters, count }) {
@@ -25,6 +25,11 @@ function Filters({ filters, setFilters, count }) {
         <option value="">Getriebe: todos</option>
         <option>Automatik</option>
         <option>Manuell</option>
+      </select>
+      <select className={sel} value={filters.furgonetas} onChange={(e) => set("furgonetas", e.target.value)}>
+        <option value="">Tipo: coches y furgonetas</option>
+        <option value="solo">Solo furgonetas</option>
+        <option value="sin">Sin furgonetas</option>
       </select>
       <select className={sel} value={filters.publicado_dias} onChange={(e) => set("publicado_dias", e.target.value)}>
         <option value="">Publicación: cualquiera</option>

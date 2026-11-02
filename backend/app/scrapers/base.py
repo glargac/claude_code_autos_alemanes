@@ -33,6 +33,21 @@ class ScrapedCar:
     extra: dict = field(default_factory=dict)
 
 
+# Modelos de furgoneta con búsqueda propia (verificados en ambos portales): dentro de la búsqueda por marca compiten con
+# los turismos por unas pocas páginas y apenas llegan. V-Klasse, Viano, Multivan y California no se pueden pedir por
+# nombre (0 resultados o resultados ajenos) y solo entran por la búsqueda general de la marca.
+VAN_SEARCHES = {"Mercedes-Benz": ("Vito", "Sprinter", "Citan"), "Volkswagen": ("Caddy", "Transporter", "Crafter")}
+
+
+def consultas(params: dict) -> list[tuple[str, str]]:
+    """(marca, modelo) a buscar: la búsqueda de cada marca y, si está activado, una más por modelo de furgoneta.
+    Con un modelo concreto en los ajustes solo se busca ese."""
+    out = [(m, params.get("modell") or "") for m in params["marken"]]
+    if params.get("buscar_furgonetas") and not (params.get("modell") or "").strip():
+        out += [(m, v) for m in params["marken"] for v in VAN_SEARCHES.get(m, ())]
+    return out
+
+
 T = TypeVar("T")
 MAX_FAILURE_RATIO = 0.5  # si fallan más de la mitad de las páginas de detalle (con un mínimo), la fuente se aborta
 MIN_FAILURES_TO_ABORT = 10

@@ -10,7 +10,7 @@ from .config import env
 from .database import Base, SessionLocal, engine, ensure_columns
 from .routers import cars, settings
 from .services.dedupe import apply_duplicates
-from .services.scope import purge_out_of_scope
+from .services.scope import etiquetar_furgonetas, purge_out_of_scope
 from .services.settings_store import get_setting
 from .services.rentabilidad import reiniciar_interrumpidos
 from .services.sync import apply_schedule, rescore_all
@@ -22,6 +22,7 @@ async def lifespan(app: FastAPI):
     ensure_columns()
     with SessionLocal() as db:
         purge_out_of_scope(db, {f.casefold() for f in get_setting(db, "search")["kraftstoffart"]})
+        etiquetar_furgonetas(db)
         apply_duplicates(db)  # barato (~1 s) y mantiene la marca coherente con los datos
         reiniciar_interrumpidos(db)  # análisis de rentabilidad que quedaron a medias por un reinicio
         rescore_all(db)  # tras cambiar el código de scoring, los scores guardados se actualizan solos

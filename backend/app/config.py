@@ -31,6 +31,7 @@ DEFAULT_SEARCH = {
     "kilometer_bis": 170000,
     "kraftstoffart": ["Benzin", "Diesel"],
     "getriebe": "",  # "", "Automatik", "Manuell"
+    "buscar_furgonetas": True,  # además de la marca, busca por modelo las furgonetas (llegan pocas por la búsqueda general)
 }
 
 # Sincronización (editable desde la UI).

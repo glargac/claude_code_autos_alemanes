@@ -15,7 +15,7 @@ from ..scrapers.kleinanzeigen import KleinanzeigenScraper
 from ..scrapers.autoscout24 import AutoScout24Scraper
 from .dedupe import apply_duplicates
 from .modelo import corregir_modelo
-from .scope import out_of_scope, purge_out_of_scope
+from .scope import es_furgoneta, out_of_scope, purge_out_of_scope
 from .scoring import MarketIndex, compute_score
 from .settings_store import get_setting, save_setting
 
@@ -70,6 +70,7 @@ async def run_sync(db: Session, progress=None) -> dict:
                         else:
                             car = Car(**{"marke": "", "modell": "", **data}, erstmals_gesehen=now, zuletzt_gesehen=now)
                             db.add(car)
+                        car.furgoneta = es_furgoneta(car.modell, car.titel)
                         rescore(car, weights, search, market)
                 except Exception as exc:
                     fehler.append(f"{scraper.name} (aviso): se omitió el anuncio {item.external_id}: {type(exc).__name__}: {str(exc)[:120]}")

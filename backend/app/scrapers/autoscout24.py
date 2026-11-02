@@ -24,7 +24,7 @@ from playwright.async_api import Page, async_playwright
 
 from playwright.async_api import Error as PlaywrightError
 
-from .base import Progress, ScrapedCar, Scraper, check_failure_rate, retry
+from .base import Progress, ScrapedCar, Scraper, check_failure_rate, consultas, retry
 
 BASE = "https://www.autoscout24.de"
 MAX_PAGES = 5  # 20 anuncios por página, ordenados del más reciente al más antiguo
@@ -220,19 +220,20 @@ class AutoScout24Scraper(Scraper):
     ) -> list[ScrapedCar]:
         report = progress or (lambda *_: None)
         self.warnings = []
-        modell = re.sub(r"[\s-]", "", (params.get("modell") or "").lower())
         results: dict[str, ScrapedCar] = {}
         async with self._context() as ctx:
             page = await ctx.new_page()
-            marken = params["marken"]
+            marken = consultas(params)
             report("listas", 0, len(marken))
             failed_brands = 0
-            for i, marke in enumerate(marken, 1):
+            for i, (marke, modell_q) in enumerate(marken, 1):
+                qparams = {**params, "modell": modell_q}
+                modell = re.sub(r"[\s-]", "", modell_q.lower())
                 n = 1
                 try:
                     for n in range(1, MAX_PAGES + 1):
-                        async def fetch(n=n, marke=marke):
-                            props, _ = await self._props(page, build_url(params, marke, n))
+                        async def fetch(n=n, marke=marke, qparams=qparams):
+                            props, _ = await self._props(page, build_url(qparams, marke, n))
                             if "pageQuery" not in props:  # sin conexión, bloqueo o página a medio cargar: se reintenta
                                 raise PlaywrightError("la página no trajo datos (__NEXT_DATA__)")
                             return props

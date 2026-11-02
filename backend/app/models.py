@@ -59,6 +59,7 @@ class Car(Base):
     rentabilidad: Mapped[dict | None] = mapped_column(JSON)
     duplicado_de: Mapped[int | None] = mapped_column(Integer, index=True)
     # «Eliminado» por el usuario (botón Eliminar): la fila se conserva para que la sync no recree el anuncio.
+    furgoneta: Mapped[bool] = mapped_column(default=False, index=True)  # Vito, Citan, Caddy, Sprinter...; solo etiqueta/filtro
     oculto: Mapped[bool] = mapped_column(default=False, index=True)
     erstmals_gesehen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     zuletzt_gesehen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

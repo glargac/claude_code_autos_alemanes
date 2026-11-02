@@ -160,6 +160,7 @@ export default function CarCard({ car, onChange, selected, onSelect, onDelete })
             <span className={`rounded px-1.5 py-0.5 text-[11px] ring-1 ${SOURCE_STYLE[car.source] ?? "ring-slate-700"}`}>
               {SOURCE_LABEL[car.source] ?? car.source}
             </span>
+            {car.furgoneta && <span className="rounded-full bg-amber-900 px-2 py-0.5 text-xs text-amber-200">Furgoneta</span>}
             {!car.aktiv && <span className="rounded-full bg-slate-600 px-2 py-0.5 text-xs">Verkauft / Inaktiv</span>}
             <RentabilidadBadge r={car.rentabilidad} />
           </div>

@@ -1,8 +1,7 @@
-"""Qué queda fuera del alcance de la app: combustibles no deseados (eléctricos...) y furgonetas de carga.
+"""Qué queda fuera del alcance de la app (combustibles no deseados: eléctricos...) y qué es una furgoneta.
 
-El criterio de furgoneta es conservador y solo usa indicios explícitos de carga en el modelo o el título:
-mejor dejar pasar una furgoneta dudosa (un Caddy, un Vito sin más pistas pueden ser turismos) que
-descartar un coche legítimo. Se aplica a los anuncios nuevos al guardar y a los ya guardados al limpiar.
+Las furgonetas (Vito, Citan, Caddy, Sprinter...) SÍ entran: se etiquetan con `Car.furgoneta` y la lista las puede
+filtrar. Antes se descartaban; las ya borradas se recuperan en la próxima sync. Se aplica al guardar y a los ya guardados al limpiar.
 """
 import re
 
@@ -11,21 +10,18 @@ from sqlalchemy.orm import Session
 
 from ..models import Car
 
-# Modelos que son siempre furgonetas/comerciales (se compara con el modelo sin espacios ni guiones).
-CARGO_MODELS = ("sprinter", "crafter", "transporter", "eload")
-# Palabras sueltas del título que delatan carga (palabra completa: "Kofferraum" no cuenta).
-CARGO_WORDS = {"kasten", "kastenwagen", "koffer", "kühlkoffer", "pritsche", "nfz", "lkw", "nutzfahrzeug", "kastenwagen"}
+# Modelos de furgoneta (palabras completas del modelo o del título; "Touran" o "Sharan" son monovolúmenes, no entran).
+VAN_WORDS = {"sprinter", "crafter", "transporter", "vito", "citan", "caddy", "viano", "multivan", "california", "caravelle"}
+# Palabras del título que delatan carga o que es un comercial (palabra completa: "Kofferraum" no cuenta).
+CARGO_WORDS = {"kasten", "kastenwagen", "koffer", "kühlkoffer", "pritsche", "nfz", "lkw", "nutzfahrzeug"}
 
 
-def _norm(text: str | None) -> str:
-    return re.sub(r"[\s_-]+", "", (text or "").lower())
-
-
-def is_cargo_van(modell: str | None, titel: str | None) -> bool:
-    if any(m in _norm(modell) for m in CARGO_MODELS) or any(m in _norm(titel) for m in CARGO_MODELS):
+def es_furgoneta(modell: str | None, titel: str | None) -> bool:
+    """Furgoneta (de carga, mixta o de pasajeros) según el modelo o el título. Solo sirve para etiquetar y filtrar."""
+    words = set(re.findall(r"[a-zäöüß]+", f"{modell or ''} {titel or ''}".lower()))
+    if "eload" in re.sub(r"[\s_-]+", "", f"{modell or ''} {titel or ''}".lower()):
         return True
-    words = set(re.findall(r"[a-zäöüß]+", (titel or "").lower()))
-    return bool(words & CARGO_WORDS)
+    return bool(words & (VAN_WORDS | CARGO_WORDS))
 
 
 def out_of_scope(item, wanted_fuels: set[str]) -> str | None:
@@ -33,8 +29,6 @@ def out_of_scope(item, wanted_fuels: set[str]) -> str | None:
     fuel = (item.kraftstoffart or "").casefold()
     if fuel and fuel not in wanted_fuels:
         return f"combustible {item.kraftstoffart}"
-    if is_cargo_van(item.modell, item.titel):
-        return "furgoneta de carga"
     return None
 
 
@@ -52,3 +46,14 @@ def purge_out_of_scope(db: Session, wanted_fuels: set[str]) -> int:
             removed += 1
     db.commit()
     return removed
+
+
+def etiquetar_furgonetas(db: Session) -> int:
+    """Pone `Car.furgoneta` a todos los coches guardados (barato; se llama al arrancar). Devuelve cuántos cambiaron."""
+    cambiados = 0
+    for car in db.scalars(select(Car)).all():
+        valor = es_furgoneta(car.modell, car.titel)
+        if car.furgoneta != valor:
+            car.furgoneta, cambiados = valor, cambiados + 1
+    db.commit()
+    return cambiados
