@@ -33,7 +33,7 @@ def out_of_scope(item, wanted_fuels: set[str]) -> str | None:
 
 
 def has_followup(car: Car) -> bool:
-    return (car.status or "Neu") != "Neu" or bool((car.notizen or "").strip()) or car.termin_am is not None
+    return car.favorito or (car.status or "Neu") != "Neu" or bool((car.notizen or "").strip()) or car.termin_am is not None
 
 
 def purge_out_of_scope(db: Session, wanted_fuels: set[str]) -> int:

@@ -27,7 +27,7 @@ def get_db():
 # Columnas añadidas después de la primera versión: create_all no modifica tablas existentes.
 _ADDED_COLUMNS = {"cars": {"duplicado_de": "INTEGER", "rentabilidad": "TEXT", "modell_original": "VARCHAR(100)", "erstzulassung_monat": "INTEGER",
                           "oculto": "BOOLEAN DEFAULT 0", "co2_gkm": "INTEGER",
-                          "furgoneta": "BOOLEAN DEFAULT 0"}}  # JSON se guarda como texto
+                          "furgoneta": "BOOLEAN DEFAULT 0", "favorito": "BOOLEAN DEFAULT 0"}}  # JSON se guarda como texto
 
 
 def ensure_columns() -> None:
@@ -42,3 +42,6 @@ def ensure_columns() -> None:
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}"))
                     conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table}_{name} ON {table} ({name})"))
+                    if name == "favorito":  # el seguimiento solo se ve en Favoritos: los que ya lo tenían no se pierden
+                        conn.execute(text("UPDATE cars SET favorito = 1 WHERE status <> 'Neu' OR termin_am IS NOT NULL "
+                                          "OR (notizen IS NOT NULL AND TRIM(notizen) <> '')"))

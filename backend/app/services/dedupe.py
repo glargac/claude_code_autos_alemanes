@@ -86,7 +86,7 @@ def _completeness(car: Car) -> int:
 
 def _preference(car: Car) -> tuple:
     """Orden para elegir la principal: la que ya tiene seguimiento, la más completa y la más antigua."""
-    has_crm = (car.status or "Neu") != "Neu" or bool((car.notizen or "").strip()) or car.termin_am is not None
+    has_crm = car.favorito or (car.status or "Neu") != "Neu" or bool((car.notizen or "").strip()) or car.termin_am is not None
     return (not has_crm, -_completeness(car), car.erstmals_gesehen or datetime.min, car.id or 0)
 
 

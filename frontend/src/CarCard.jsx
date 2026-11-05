@@ -121,7 +121,7 @@ function Crm({ car, onChange }) {
   );
 }
 
-export default function CarCard({ car, onChange, selected, onSelect, onDelete }) {
+export default function CarCard({ car, onChange, selected, onSelect, onDelete, enFavoritos }) {
   const [open, setOpen] = useState(false);
   const [informe, setInforme] = useState(false);
   const ring =
@@ -179,9 +179,18 @@ export default function CarCard({ car, onChange, selected, onSelect, onDelete })
                 {o.preis != null && o.preis !== car.preis ? ` · ${o.preis.toLocaleString("de-DE")} €` : ""} ↗
               </a>
             ))}
-            <button onClick={() => setOpen(!open)} className="text-slate-400 hover:text-white">
-              {open ? "Cerrar seguimiento" : car.notizen ? "Seguimiento · con notas" : "Seguimiento"}
+            <button
+              onClick={() => api.updateCar(car.id, { favorito: !car.favorito }).then(onChange).catch((e) => alert(e.message))}
+              title={car.favorito ? "Quitarlo de Favoritos" : "Añadirlo a Favoritos (ahí puedes hacerle seguimiento)"}
+              className={car.favorito ? "text-amber-400 hover:text-amber-300" : "text-slate-400 hover:text-amber-300"}
+            >
+              {car.favorito ? "★ Favorito" : "☆ Favorito"}
             </button>
+            {enFavoritos && (
+              <button onClick={() => setOpen(!open)} className="text-slate-400 hover:text-white">
+                {open ? "Cerrar seguimiento" : car.notizen ? "Seguimiento · con notas" : "Seguimiento"}
+              </button>
+            )}
             <button
               onClick={() => onDelete([car])}
               title="Quitarlo de tu lista para siempre (no volverá a aparecer en las próximas actualizaciones)"
@@ -206,7 +215,7 @@ export default function CarCard({ car, onChange, selected, onSelect, onDelete })
 
       {informe && car.rentabilidad && <Informe r={car.rentabilidad} />}
 
-      {open && (
+      {enFavoritos && open && (
         <>
           {car.score_detail && (
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-400">

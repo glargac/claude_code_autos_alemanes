@@ -46,6 +46,7 @@ class CarOut(BaseModel):
     notizen: str
     aktiv: bool
     furgoneta: bool = False
+    favorito: bool = False
     farbe: str = "gris"
     otros_enlaces: list[OtroEnlace] = []
     rentabilidad: dict | None = None
@@ -55,6 +56,12 @@ class CarUpdate(BaseModel):
     status: Status | None = None
     termin_am: datetime | None = None
     notizen: str | None = None
+    favorito: bool | None = None
+
+
+class FavoritoIn(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=500)
+    favorito: bool
 
 
 class EliminarIn(BaseModel):

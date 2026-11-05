@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Car, Status
-from ..schemas import CarOut, CarUpdate, EliminarIn, OtroEnlace
+from ..schemas import CarOut, CarUpdate, EliminarIn, FavoritoIn, OtroEnlace
 from ..services import rentabilidad as rentabilidad_service
 from ..services.scoring import color_for
 from ..services.settings_store import get_setting
@@ -47,12 +47,13 @@ def _filtros(
     publicado_dias: int | None = None,
     inaktiv_anzeigen: bool = False,
     furgonetas: Literal["", "solo", "sin"] = "",
+    favoritos: bool = False,
     precio_max: int | None = None,
     km_max: int | None = None,
     anio_desde: int | None = None,
 ) -> dict:
     return dict(fuente=fuente, marke=marke, modell=modell, getriebe=getriebe, status=status,
-                publicado_dias=publicado_dias, inaktiv_anzeigen=inaktiv_anzeigen, furgonetas=furgonetas,
+                publicado_dias=publicado_dias, inaktiv_anzeigen=inaktiv_anzeigen, furgonetas=furgonetas, favoritos=favoritos,
                 precio_max=precio_max, km_max=km_max, anio_desde=anio_desde)
 
 
@@ -61,6 +62,8 @@ def _consulta(f: dict):
     if not f["inaktiv_anzeigen"]:
         q = q.where(Car.aktiv.is_(True))
     q = q.where(Car.oculto.is_(False))  # «Eliminar» del usuario: no se borra la fila (la sync la recrearía), no se muestra más
+    if f.get("favoritos"):
+        q = q.where(Car.favorito.is_(True))
     if f.get("furgonetas") == "solo":
         q = q.where(Car.furgoneta.is_(True))
     elif f.get("furgonetas") == "sin":
@@ -108,6 +111,18 @@ def analizar_top_status():
     return dict(rentabilidad_service.lote)
 
 
+@router.post("/favoritos")
+def marcar_favoritos(body: FavoritoIn, db: Session = Depends(get_db)):
+    """Añade o quita de Favoritos varios coches a la vez."""
+    cars = db.scalars(select(Car).where(Car.id.in_(body.ids))).all()
+    if not cars:
+        raise HTTPException(404, "Ningún auto encontrado")
+    for car in cars:
+        car.favorito = body.favorito
+    db.commit()
+    return {"actualizados": len(cars)}
+
+
 @router.post("/eliminar")
 def eliminar(body: EliminarIn, db: Session = Depends(get_db)):
     """Elimina coches de la lista para siempre. La fila se conserva marcada (`oculto`): si se borrara, la próxima sync
@@ -138,6 +153,8 @@ def update_car(car_id: int, body: CarUpdate, db: Session = Depends(get_db)):
         car.termin_am = body.termin_am
     if body.notizen is not None:
         car.notizen = body.notizen
+    if body.favorito is not None:
+        car.favorito = body.favorito
     db.commit()
     return _out(car, get_setting(db, "weights"), _others(db, [car.id]), _hash(db))
 

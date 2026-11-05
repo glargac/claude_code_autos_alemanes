@@ -37,7 +37,7 @@ def _resumen(c: dict) -> dict:
         "id": c["id"], "coche": f"{c['marke']} {c['modell']}", "titulo": c["titel"], "anio": c["erstzulassung"],
         "km": c["kilometer"], "precio_eur": c["preis"], "combustible": c["kraftstoffart"], "cambio": c["getriebe"],
         "lugar": c["ort"], "fuente": c["source"], "url": c["url"], "puntuacion": c["score"], "estado": c["status"],
-        "tuv_hasta": c["tuev_bis"],
+        "tuv_hasta": c["tuev_bis"], "favorito": c["favorito"],
         "rentabilidad": {"estado": r["estado"], "veredicto": r.get("veredicto"), "margen_neto_eur": calc.get("margen_neto"),
                          "roi_pct": calc.get("roi_pct")} if r else None,
     }

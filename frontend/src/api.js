@@ -27,6 +27,7 @@ export const api = {
   car: (id) => req(`/cars/${id}`),
   analyzeProfitability: (id) => req(`/cars/${id}/rentabilidad`, { method: "POST" }),
   eliminar: (ids) => req("/cars/eliminar", { method: "POST", body: JSON.stringify({ ids }) }),
+  favoritos: (ids, favorito) => req("/cars/favoritos", { method: "POST", body: JSON.stringify({ ids, favorito }) }),
   updateCar: (id, body) => req(`/cars/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   getSetting: (key) => req(`/settings/${key}`),
   saveSetting: (key, value) => req(`/settings/${key}`, { method: "PUT", body: JSON.stringify(value) }),

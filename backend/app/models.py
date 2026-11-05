@@ -60,6 +60,7 @@ class Car(Base):
     duplicado_de: Mapped[int | None] = mapped_column(Integer, index=True)
     # «Eliminado» por el usuario (botón Eliminar): la fila se conserva para que la sync no recree el anuncio.
     furgoneta: Mapped[bool] = mapped_column(default=False, index=True)  # Vito, Citan, Caddy, Sprinter...; solo etiqueta/filtro
+    favorito: Mapped[bool] = mapped_column(default=False, index=True)  # los que le interesan: único sitio con seguimiento
     oculto: Mapped[bool] = mapped_column(default=False, index=True)
     erstmals_gesehen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     zuletzt_gesehen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

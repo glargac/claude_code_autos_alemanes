@@ -176,7 +176,11 @@ export default function App() {
   const [porEliminar, setPorEliminar] = useState(null);  // coches pendientes de confirmar en la ventana
   const [eliminando, setEliminando] = useState(false);
 
-  const load = useCallback(() => api.cars(filters).then(setCars).catch(console.error), [filters]);
+  const enFavoritos = tab === "favoritos";
+  const load = useCallback(
+    () => (enFavoritos ? api.cars({ favoritos: true, inaktiv_anzeigen: true }) : api.cars(filters)).then(setCars).catch(console.error),
+    [filters, enFavoritos],
+  );
 
   // Recarga al cambiar filtros (con un pequeño retardo para no consultar en cada tecla).
   useEffect(() => {
@@ -239,8 +243,25 @@ export default function App() {
   };
 
   const onCarChange = (upd) => {
-    setCars((list) => list.map((x) => (x.id === upd.id ? upd : x)));
+    if (enFavoritos && !upd.favorito) setCars((list) => list.filter((x) => x.id !== upd.id));
+    else setCars((list) => list.map((x) => (x.id === upd.id ? upd : x)));
   };
+
+  const marcarFavoritos = async (favorito) => {
+    const ids = [...seleccion];
+    try {
+      await api.favoritos(ids, favorito);
+      setCars((list) => (enFavoritos && !favorito ? list.filter((x) => !seleccion.has(x.id)) : list.map((x) => (seleccion.has(x.id) ? { ...x, favorito } : x))));
+      setSeleccion(new Set());
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  // En Favoritos, primero los que tienen cita (la más próxima arriba) y luego por puntuación.
+  const visibles = enFavoritos
+    ? [...cars].sort((a, b) => (a.termin_am ? 0 : 1) - (b.termin_am ? 0 : 1) || (a.termin_am ?? "").localeCompare(b.termin_am ?? "") || (b.score ?? 0) - (a.score ?? 0))
+    : cars;
 
   const toggleSel = (id) =>
     setSeleccion((s) => {
@@ -271,7 +292,7 @@ export default function App() {
 
   const tabBtn = (id, label) => (
     <button
-      onClick={() => setTab(id)}
+      onClick={() => { setSeleccion(new Set()); setCars([]); setTab(id); }}
       className={`rounded-lg px-3 py-1.5 text-sm ${tab === id ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white"}`}
     >
       {label}
@@ -287,6 +308,7 @@ export default function App() {
         </div>
         <nav className="flex items-center gap-2">
           {tabBtn("dashboard", "Dashboard")}
+          {tabBtn("favoritos", "★ Favoritos")}
           {tabBtn("settings", "Ajustes")}
           <button
             onClick={() => runSync().catch((e) => alert(e.message))}
@@ -311,6 +333,9 @@ export default function App() {
                 </li>
               ))}
             </ul>
+            {porEliminar.some((c) => c.favorito) && (
+              <p className="mt-3 text-sm text-amber-400">Incluye {porEliminar.filter((c) => c.favorito).length} favorito(s), con su seguimiento.</p>
+            )}
             <p className="mt-3 text-xs text-slate-500">Desaparecerán de la lista y no volverán a aparecer en las próximas actualizaciones.</p>
             <div className="mt-5 flex justify-end gap-3">
               <button onClick={() => setPorEliminar(null)} disabled={eliminando} className="rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">
@@ -324,10 +349,16 @@ export default function App() {
         </div>
       )}
 
-      {tab === "dashboard" ? (
+      {tab !== "settings" ? (
         <>
-          <Filters filters={filters} setFilters={setFilters} count={cars.length} />
-          <div className="flex items-center gap-3">
+          {enFavoritos ? (
+            <p className="text-sm text-slate-400">
+              {cars.length} favoritos · aquí haces el seguimiento (estado, notas y cita) de los coches que te interesan.
+            </p>
+          ) : (
+            <Filters filters={filters} setFilters={setFilters} count={cars.length} />
+          )}
+          {!enFavoritos && <div className="flex items-center gap-3">
             <button
               onClick={runTop}
               disabled={lote.running || pendientes === 0}
@@ -337,7 +368,7 @@ export default function App() {
               {lote.running ? "Analizando…" : pendientes === 0 ? `Top ${TOP_N} al día` : `Analizar Top ${TOP_N}`}
             </button>
             {!lote.running && pendientes > 0 && <span className="text-xs text-slate-500">{pendientes} por analizar</span>}
-          </div>
+          </div>}
           <div className="flex items-center gap-3 text-sm">
             <label className="flex items-center gap-2 text-slate-400">
               <input
@@ -351,6 +382,9 @@ export default function App() {
             {seleccion.size > 0 && (
               <>
                 <span className="text-slate-400">{seleccion.size} seleccionados</span>
+                <button onClick={() => marcarFavoritos(!enFavoritos)} className="rounded-lg bg-amber-700 px-3 py-1 hover:bg-amber-600">
+                  {enFavoritos ? "Quitar de favoritos" : "★ Añadir a favoritos"}
+                </button>
                 <button
                   onClick={() => setPorEliminar(cars.filter((c) => seleccion.has(c.id)))}
                   className="rounded-lg bg-red-700 px-3 py-1 hover:bg-red-600"
@@ -360,9 +394,13 @@ export default function App() {
               </>
             )}
           </div>
-          {cars.length === 0 && <p className="text-slate-400">Sin resultados. Ajusta los filtros o pulsa Sincronizar.</p>}
-          {cars.map((c) => (
-            <CarCard key={c.id} car={c} onChange={onCarChange} selected={seleccion.has(c.id)} onSelect={toggleSel} onDelete={setPorEliminar} />
+          {cars.length === 0 && (
+            <p className="text-slate-400">
+              {enFavoritos ? "Aún no tienes favoritos. Márcalos con «☆ Favorito» en la lista." : "Sin resultados. Ajusta los filtros o pulsa Sincronizar."}
+            </p>
+          )}
+          {visibles.map((c) => (
+            <CarCard key={c.id} car={c} onChange={onCarChange} selected={seleccion.has(c.id)} onSelect={toggleSel} onDelete={setPorEliminar} enFavoritos={enFavoritos} />
           ))}
         </>
       ) : (
