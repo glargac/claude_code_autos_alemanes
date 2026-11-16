@@ -139,7 +139,7 @@ def _gemini():
     return _clientes["gemini"]
 
 
-def _llamar_gemini(prompt: str) -> tuple[str, dict]:
+def _llamar_gemini(prompt: str, schema=None) -> tuple[str, dict]:
     from google.genai import errors, types
 
     def pedir(config):
@@ -148,7 +148,7 @@ def _llamar_gemini(prompt: str) -> tuple[str, dict]:
     # max_output_tokens generoso: en los modelos que "piensan" esos tokens cuentan dentro del límite.
     base = dict(response_mime_type="application/json", temperature=0.3, max_output_tokens=8192)
     try:
-        resp = pedir(types.GenerateContentConfig(response_schema=_InformeSchema, **base))
+        resp = pedir(types.GenerateContentConfig(response_schema=schema or _InformeSchema, **base))
     except errors.ClientError as exc:
         if exc.code != 400 or "schema" not in str(exc.message or "").lower():
             raise
@@ -165,7 +165,7 @@ def _llamar_gemini(prompt: str) -> tuple[str, dict]:
     }
 
 
-def _llamar_anthropic(prompt: str) -> tuple[str, dict]:
+def _llamar_anthropic(prompt: str, schema=None) -> tuple[str, dict]:
     if "anthropic" not in _clientes:
         import anthropic
 
@@ -199,18 +199,19 @@ def _mensaje_error(exc: Exception, prov: str) -> str:
     return f"El informe de IA ({nombre}) falló ({type(exc).__name__}: {detalle[:120]}). El cálculo es válido."
 
 
-def analyze_report(prompt: str) -> tuple[dict | None, str | None]:
-    """Llamada bloqueante (ejecutar en un hilo). Nunca lanza: devuelve (informe, None) o (None, motivo)."""
+def analyze_report(prompt: str, schema=None, validar=None) -> tuple[dict | None, str | None]:
+    """Llamada bloqueante (ejecutar en un hilo). Nunca lanza: devuelve (informe, None) o (None, motivo).
+    Por defecto es el informe de rentabilidad; otro uso (p. ej. la revisión técnica) pasa su `schema` y su `validar`."""
     prov = proveedor()
     if prov is None:
         return None, SIN_CLAVE
     try:
-        texto, uso = (_llamar_gemini if prov == "gemini" else _llamar_anthropic)(prompt)
+        texto, uso = (_llamar_gemini if prov == "gemini" else _llamar_anthropic)(prompt, schema)
         try:
             data = json.loads(texto[texto.index("{") : texto.rindex("}") + 1])  # tolera ```json ... ```
         except ValueError:
             raise ValueError("la respuesta no es un JSON completo (¿cortada por el límite de tokens?)") from None
-        informe = validar_informe(data)
+        informe = (validar or validar_informe)(data)
         informe["uso"] = {"proveedor": NOMBRES[prov], "modelo": modelo(prov), **uso}
         return informe, None
     except Exception as exc:

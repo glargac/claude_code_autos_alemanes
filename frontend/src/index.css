@@ -1,1 +1,12 @@
 @import "tailwindcss";
+
+/* Paleta del módulo «Revisiones»: azul marino con acentos de estado. */
+@theme {
+  --color-navy-950: #0b132b;
+  --color-navy-900: #1c2541;
+  --color-navy-800: #2a3558;
+  --color-ok: #10b981;
+  --color-warn: #f59e0b;
+  --color-bad: #ef4444;
+  --color-accent: #2563eb;
+}

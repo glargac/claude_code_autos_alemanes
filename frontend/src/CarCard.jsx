@@ -121,7 +121,7 @@ function Crm({ car, onChange }) {
   );
 }
 
-export default function CarCard({ car, onChange, selected, onSelect, onDelete, enFavoritos }) {
+export default function CarCard({ car, onChange, selected, onSelect, onDelete, enFavoritos, revision, onRevision }) {
   const [open, setOpen] = useState(false);
   const [informe, setInforme] = useState(false);
   const ring =
@@ -190,6 +190,14 @@ export default function CarCard({ car, onChange, selected, onSelect, onDelete, e
               <button onClick={() => setOpen(!open)} className="text-slate-400 hover:text-white">
                 {open ? "Cerrar seguimiento" : car.notizen ? "Seguimiento · con notas" : "Seguimiento"}
               </button>
+            )}
+            {enFavoritos && (
+              <button onClick={() => onRevision(car)} className="rounded-md bg-accent/20 px-2 py-0.5 text-blue-300 ring-1 ring-accent/40 hover:bg-accent/30">
+                {revision ? `Ver revisión técnica · ${revision.progreso}%` : "Iniciar revisión técnica"}
+              </button>
+            )}
+            {enFavoritos && revision && revision.progreso > 0 && (
+              <button onClick={() => onRevision(car, "informe")} className="text-blue-300 hover:text-blue-200">Ver informe técnico</button>
             )}
             <button
               onClick={() => onDelete([car])}

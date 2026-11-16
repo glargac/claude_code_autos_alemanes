@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
 import CarCard, { SOURCE_LABEL, STATUSES } from "./CarCard.jsx";
 import Settings from "./Settings.jsx";
+import Revisiones from "./revisiones/Revisiones.jsx";
 
 const MARKEN = ["Mercedes-Benz", "BMW", "Audi", "Volkswagen", "Porsche"];
 const EMPTY_FILTERS = { fuente: "", marke: "", modell: "", getriebe: "", status: "", publicado_dias: "", furgonetas: "", inaktiv_anzeigen: false };
@@ -175,12 +176,31 @@ export default function App() {
   const [seleccion, setSeleccion] = useState(() => new Set());  // ids marcados con la casilla
   const [porEliminar, setPorEliminar] = useState(null);  // coches pendientes de confirmar en la ventana
   const [eliminando, setEliminando] = useState(false);
+  const [revisionAbierta, setRevisionAbierta] = useState(null);  // id de la revisión técnica que se está rellenando
+  const [revisiones, setRevisiones] = useState({});  // car_id → {id, estado, progreso} (botón de Favoritos)
 
   const enFavoritos = tab === "favoritos";
   const load = useCallback(
     () => (enFavoritos ? api.cars({ favoritos: true, inaktiv_anzeigen: true }) : api.cars(filters)).then(setCars).catch(console.error),
     [filters, enFavoritos],
   );
+
+  useEffect(() => {
+    if (enFavoritos) {
+      api.inspections().then((d) => setRevisiones(Object.fromEntries(d.revisiones.map((r) => [r.car_id, { id: r.id, estado: r.estado, progreso: r.resumen.progreso }])))).catch(console.error);
+    }
+  }, [enFavoritos]);
+
+  const abrirRevision = async (car, vista = "checklist") => {
+    try {
+      const r = await api.startInspection(car.id);
+      setRevisionAbierta({ id: r.id, vista });
+      setCars([]);
+      setTab("revisiones");
+    } catch (e) {
+      alert(e.message);
+    }
+  };
 
   // Recarga al cambiar filtros (con un pequeño retardo para no consultar en cada tecla).
   useEffect(() => {
@@ -292,7 +312,7 @@ export default function App() {
 
   const tabBtn = (id, label) => (
     <button
-      onClick={() => { setSeleccion(new Set()); setCars([]); setTab(id); }}
+      onClick={() => { setSeleccion(new Set()); setCars([]); setRevisionAbierta(null); setTab(id); }}
       className={`rounded-lg px-3 py-1.5 text-sm ${tab === id ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white"}`}
     >
       {label}
@@ -301,14 +321,15 @@ export default function App() {
 
   return (
     <main className="mx-auto max-w-4xl space-y-4 p-6">
-      <header className="flex items-center justify-between">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-bold">Autos Alemanes · Costa del Sol</h1>
           <LastSync sync={sync} now={now} />
         </div>
-        <nav className="flex items-center gap-2">
+        <nav className="flex flex-wrap items-center gap-2">
           {tabBtn("dashboard", "Dashboard")}
           {tabBtn("favoritos", "★ Favoritos")}
+          {tabBtn("revisiones", "Revisiones")}
           {tabBtn("settings", "Ajustes")}
           <button
             onClick={() => runSync().catch((e) => alert(e.message))}
@@ -349,7 +370,9 @@ export default function App() {
         </div>
       )}
 
-      {tab !== "settings" ? (
+      {tab === "revisiones" ? (
+        <Revisiones abierta={revisionAbierta} setAbierta={setRevisionAbierta} />
+      ) : tab !== "settings" ? (
         <>
           {enFavoritos ? (
             <p className="text-sm text-slate-400">
@@ -400,7 +423,7 @@ export default function App() {
             </p>
           )}
           {visibles.map((c) => (
-            <CarCard key={c.id} car={c} onChange={onCarChange} selected={seleccion.has(c.id)} onSelect={toggleSel} onDelete={setPorEliminar} enFavoritos={enFavoritos} />
+            <CarCard key={c.id} car={c} onChange={onCarChange} selected={seleccion.has(c.id)} onSelect={toggleSel} onDelete={setPorEliminar} enFavoritos={enFavoritos} revision={revisiones[c.id]} onRevision={abrirRevision} />
           ))}
         </>
       ) : (

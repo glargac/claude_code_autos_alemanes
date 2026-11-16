@@ -13,6 +13,7 @@ class Env(BaseSettings):
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-5-5"  # modelo de Anthropic
     sync_hour: int = 5
+    inspections_dir: str = ""  # fotos de las revisiones; vacío = backend/data/inspections
 
 
 env = Env()

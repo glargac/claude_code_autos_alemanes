@@ -142,3 +142,22 @@ class RentabilidadSettings(BaseModel):
             raise ValueError("margen_dudoso_eur no puede ser mayor que margen_comprar_eur")
         return self
 
+
+
+class InspeccionIn(BaseModel):
+    car_id: int
+    cliente: str = Field("", max_length=120)
+
+
+class InspeccionUpdate(BaseModel):
+    estado: Literal["en_curso", "en_qc", "finalizada"] | None = None
+    cliente: str | None = Field(None, max_length=120)
+    vin: str | None = Field(None, max_length=32)
+
+
+class PuntoUpdate(BaseModel):
+    """Campos presentes = se actualizan; `estado: null` y `valor: null` explícitos los borran."""
+
+    estado: Literal["ok", "aviso", "incidencia"] | None = None
+    valor: str | int | float | None = None
+    observaciones: str | None = Field(None, max_length=2000)

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Float, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -84,3 +84,40 @@ class MercadoCache(Base):
     data: Mapped[dict] = mapped_column(JSON)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+
+
+class Inspection(Base):
+    """Revisión técnica en campo de un coche (una por coche). El checklist vive en services/checklist.py."""
+
+    __tablename__ = "inspections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    car_id: Mapped[int] = mapped_column(ForeignKey("cars.id"), unique=True, index=True)
+    estado: Mapped[str] = mapped_column(String(20), default="en_curso", index=True)  # en_curso | en_qc | finalizada
+    cliente: Mapped[str] = mapped_column(String(120), default="")
+    vin: Mapped[str] = mapped_column(String(32), default="")
+    informe_ia: Mapped[dict | None] = mapped_column(JSON)  # se genera bajo demanda (botón «Generar análisis IA»)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    actualizado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    finalizada_en: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class InspectionItem(Base):
+    __tablename__ = "inspection_items"
+    __table_args__ = (UniqueConstraint("inspection_id", "codigo", name="uq_inspection_codigo"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    inspection_id: Mapped[int] = mapped_column(ForeignKey("inspections.id"), index=True)
+    codigo: Mapped[str] = mapped_column(String(30))  # EXTERIOR-02: referencia en services/checklist.py
+    estado: Mapped[str | None] = mapped_column(String(12))  # ok | aviso | incidencia | None (sin revisar)
+    valor: Mapped[dict | None] = mapped_column(JSON)  # {"v": ...}: el valor extra según el tipo del punto
+    observaciones: Mapped[str] = mapped_column(Text, default="")
+
+
+class InspectionMedia(Base):
+    __tablename__ = "inspection_media"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("inspection_items.id"), index=True)
+    archivo: Mapped[str] = mapped_column(String(120))  # nombre en data/inspections/<inspection_id>/; la miniatura lleva «_t»
+    creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

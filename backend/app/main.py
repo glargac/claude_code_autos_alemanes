@@ -8,8 +8,9 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import env
 from .database import Base, SessionLocal, engine, ensure_columns
-from .routers import cars, settings
+from .routers import cars, inspections, settings
 from .services.dedupe import apply_duplicates
+from .services.inspections import media_dir
 from .services.scope import etiquetar_furgonetas, purge_out_of_scope
 from .services.settings_store import get_setting
 from .services.rentabilidad import reiniciar_interrumpidos
@@ -44,6 +45,9 @@ app.add_middleware(
 )
 app.include_router(cars.router)
 app.include_router(settings.router)
+app.include_router(inspections.router)
+# Fotos de las revisiones: antes del montaje de la interfaz, que captura todo lo demás.
+app.mount("/api/media/inspections", StaticFiles(directory=media_dir()), name="inspection-media")
 
 
 @app.get("/api/health")

@@ -29,6 +29,22 @@ export const api = {
   eliminar: (ids) => req("/cars/eliminar", { method: "POST", body: JSON.stringify({ ids }) }),
   favoritos: (ids, favorito) => req("/cars/favoritos", { method: "POST", body: JSON.stringify({ ids, favorito }) }),
   updateCar: (id, body) => req(`/cars/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  inspections: () => req("/inspections"),
+  inspection: (id) => req(`/inspections/${id}`),
+  startInspection: (car_id) => req("/inspections", { method: "POST", body: JSON.stringify({ car_id }) }),
+  updateInspection: (id, body) => req(`/inspections/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteInspection: (id) => req(`/inspections/${id}`, { method: "DELETE" }),
+  saveItem: (id, codigo, body) => req(`/inspections/${id}/items/${codigo}`, { method: "PATCH", body: JSON.stringify(body) }),
+  uploadPhotos: (id, codigo, files) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    return fetch(`/api/inspections/${id}/items/${codigo}/media`, { method: "POST", body: fd }).then(async (res) => {
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `${res.status}`);
+      return res.json();
+    });
+  },
+  generateInspectionAI: (id) => req(`/inspections/${id}/informe-ia`, { method: "POST" }),
+  deletePhoto: (mediaId) => req(`/inspections/media/${mediaId}`, { method: "DELETE" }),
   getSetting: (key) => req(`/settings/${key}`),
   saveSetting: (key, value) => req(`/settings/${key}`, { method: "PUT", body: JSON.stringify(value) }),
   sync: () => req("/sync", { method: "POST" }),
