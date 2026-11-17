@@ -90,7 +90,18 @@ function LastSync({ sync, now }) {
   );
 }
 
+const BANNER_VISTO = "syncBannerVisto";
+
+// El resultado de la última sync (y sus avisos) se queda en memoria en el backend hasta la siguiente: sin esto se
+// mostraba en cada visita. Se enseña una vez (`started_at` identifica la sync), con ✕ para cerrarlo, y no vuelve.
 function SyncBanner({ sync }) {
+  const [cerrado, setCerrado] = useState(() => localStorage.getItem(BANNER_VISTO));
+  const terminada = !sync.running && sync.started_at && (sync.result || sync.error);
+  useEffect(() => {
+    if (terminada) localStorage.setItem(BANNER_VISTO, sync.started_at);  // la próxima visita ya no lo muestra
+  }, [terminada, sync.started_at]);
+  if (terminada && cerrado === sync.started_at) return null;
+  const cerrar = () => setCerrado(sync.started_at);
   if (sync.running) {
     const p = sync.progress;
     const label = p
@@ -109,13 +120,21 @@ function SyncBanner({ sync }) {
       </div>
     );
   }
-  if (sync.error) return <p className="rounded-lg bg-red-950 px-4 py-2 text-sm text-red-300">Error en la sincronización: {sync.error}</p>;
+  if (sync.error) {
+    return (
+      <p className="flex items-center justify-between rounded-lg bg-red-950 px-4 py-2 text-sm text-red-300">
+        <span>Error en la sincronización: {sync.error}</span>
+        <button onClick={cerrar} aria-label="Cerrar" className="ml-3 text-red-400">✕</button>
+      </p>
+    );
+  }
   if (sync.result) {
     const fehler = sync.result.fehler ?? [];
     return (
       <div className="space-y-1">
-        <p className="rounded-lg bg-green-950 px-4 py-2 text-sm text-green-300">
-          Sincronización terminada: {sync.result.nuevos} nuevos, {sync.result.actualizados} actualizados, {sync.result.inactivos} inactivos.
+        <p className="flex items-center justify-between rounded-lg bg-green-950 px-4 py-2 text-sm text-green-300">
+          <span>Sincronización terminada: {sync.result.nuevos} nuevos, {sync.result.actualizados} actualizados, {sync.result.inactivos} inactivos.</span>
+          <button onClick={cerrar} aria-label="Cerrar" className="ml-3 text-green-400">✕</button>
         </p>
         {fehler.map((f) => (
           <p key={f} className="rounded-lg bg-amber-950 px-4 py-2 text-sm text-amber-300">
