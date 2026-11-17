@@ -24,7 +24,7 @@ from playwright.async_api import Page, async_playwright
 
 from playwright.async_api import Error as PlaywrightError
 
-from .base import Progress, ScrapedCar, Scraper, check_failure_rate, consultas, retry
+from .base import Progress, ScrapedCar, Scraper, check_failure_rate, consultas, motivo, retry
 
 BASE = "https://www.autoscout24.de"
 MAX_PAGES = 5  # 20 anuncios por página, ordenados del más reciente al más antiguo
@@ -254,7 +254,7 @@ class AutoScout24Scraper(Scraper):
                         await self._pause()
                 except PlaywrightError as exc:
                     self.warnings.append(
-                        f"{marke}: la página {n} no cargó ({type(exc).__name__}); se conserva lo leído antes"
+                        f"{marke}: la página {n} no cargó ({motivo(exc)}); se conserva lo leído antes"
                     )
                     failed_brands += n == 1
                 report("listas", i, len(marken))

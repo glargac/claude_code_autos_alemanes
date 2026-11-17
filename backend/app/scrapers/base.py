@@ -65,6 +65,12 @@ async def retry(fn: Callable[[], Awaitable[T]], attempts: int = 2, pause: float 
     raise AssertionError("unreachable")
 
 
+def motivo(exc: Exception) -> str:
+    """Causa legible de un fallo de página para los avisos: el tipo solo («Error» de Playwright) no dice nada."""
+    primera = next((l.strip() for l in str(exc).splitlines() if l.strip()), "")
+    return f"{type(exc).__name__}: {primera[:110]}" if primera else type(exc).__name__
+
+
 def check_failure_rate(failed: int, attempted: int, source: str) -> None:
     """Aborta la fuente si casi todo falla (p. ej. empieza a bloquear): mejor un error claro que datos a medias."""
     if failed >= MIN_FAILURES_TO_ABORT and failed > attempted * MAX_FAILURE_RATIO:
