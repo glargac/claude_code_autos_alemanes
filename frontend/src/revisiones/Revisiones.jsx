@@ -36,7 +36,7 @@ function TarjetaRevision({ r, onOpen }) {
         </p>
         <Barra pct={r.resumen.progreso} />
         {r.resumen.revisados > 0 && (
-          <button onClick={(e) => { e.stopPropagation(); onOpen(r.id, "informe"); }} className="pt-1 text-sm text-blue-300 hover:underline">Ver informe →</button>
+          <button onClick={(e) => { e.stopPropagation(); onOpen(r.id, "informe"); }} className="py-2 text-sm text-blue-300 hover:underline">Ver informe →</button>
         )}
       </div>
     </div>
@@ -119,7 +119,7 @@ export default function Revisiones({ abierta, setAbierta }) {
             <button
               key={e}
               onClick={() => setPill(pill === e ? "" : e)}
-              className={`rounded-full px-3 py-1 text-sm ring-1 ${pill === e ? "bg-accent text-white ring-accent" : "text-slate-300 ring-white/15 hover:text-white"}`}
+              className={`rounded-full px-3 py-2 text-sm ring-1 md:py-1 ${pill === e ? "bg-accent text-white ring-accent" : "text-slate-300 ring-white/15 hover:text-white"}`}
             >
               {label} <span className="tabular-nums opacity-80">({cuenta(e)})</span>
             </button>

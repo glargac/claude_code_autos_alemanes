@@ -333,11 +333,11 @@ export default function Settings({ onSaved, onRun, syncRunning, onboarding = fal
 
       <div className="flex flex-wrap items-center gap-3">
         {!onboarding && (
-          <button onClick={() => save(false)} disabled={busy} className="rounded-lg bg-slate-700 px-4 py-2 text-sm hover:bg-slate-600 disabled:opacity-50">
+          <button onClick={() => save(false)} disabled={busy} className="rounded-lg bg-slate-700 px-4 py-2.5 text-sm hover:bg-slate-600 disabled:opacity-50">
             Guardar
           </button>
         )}
-        <button onClick={() => save(true)} disabled={busy || syncRunning} className="rounded-lg bg-sky-600 px-4 py-2 text-sm hover:bg-sky-500 disabled:opacity-50">
+        <button onClick={() => save(true)} disabled={busy || syncRunning} className="rounded-lg bg-sky-600 px-4 py-2.5 text-sm hover:bg-sky-500 disabled:opacity-50">
           {syncRunning ? "Sincronización en curso…" : onboarding ? "Aceptar y empezar la sincronización" : "Guardar y Ejecutar"}
         </button>
         {msg && <span className={`text-sm ${msg.ok ? "text-green-400" : "text-red-400"}`}>{msg.text}</span>}

@@ -6,13 +6,24 @@ import Revisiones from "./revisiones/Revisiones.jsx";
 
 const MARKEN = ["Mercedes-Benz", "BMW", "Audi", "Volkswagen", "Porsche"];
 const EMPTY_FILTERS = { fuente: "", marke: "", modell: "", getriebe: "", status: "", publicado_dias: "", furgonetas: "", inaktiv_anzeigen: false };
-const sel = "rounded-lg bg-slate-900 px-3 py-1.5 text-sm ring-1 ring-slate-700";
+const sel = "w-full rounded-lg bg-slate-900 px-3 py-2.5 text-sm ring-1 ring-slate-700 md:w-auto md:py-1.5";
+const PAGINA = 30;  // tarjetas que se pintan de una vez: con miles de coches el móvil se arrastra
 
 function Filters({ filters, setFilters, count }) {
+  const [abierto, setAbierto] = useState(false);  // en móvil los filtros se pliegan tras un botón
   const set = (k, v) => setFilters((f) => ({ ...f, [k]: v }));
   const dirty = JSON.stringify(filters) !== JSON.stringify(EMPTY_FILTERS);
+  const activos = Object.keys(EMPTY_FILTERS).filter((k) => filters[k] !== EMPTY_FILTERS[k]).length;
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 md:hidden">
+        <button onClick={() => setAbierto(!abierto)} aria-expanded={abierto} className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm ring-1 ring-slate-700">
+          ⚙ Filtros{activos > 0 && ` · ${activos}`} {abierto ? "▴" : "▾"}
+        </button>
+        {dirty && <button onClick={() => setFilters(EMPTY_FILTERS)} className="px-2 py-2.5 text-sm text-sky-400">Limpiar</button>}
+        <span className="ml-auto text-sm text-slate-500">{count} coches</span>
+      </div>
+      <div className={`${abierto ? "grid" : "hidden"} grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center`}>
       <select className={sel} value={filters.fuente} onChange={(e) => set("fuente", e.target.value)}>
         <option value="">Fuente: todas</option>
         {Object.entries(SOURCE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -21,7 +32,7 @@ function Filters({ filters, setFilters, count }) {
         <option value="">Marke: todas</option>
         {MARKEN.map((m) => <option key={m}>{m}</option>)}
       </select>
-      <input className={`${sel} w-32`} placeholder="Modell" value={filters.modell} onChange={(e) => set("modell", e.target.value)} />
+      <input className={`${sel} md:!w-32`} placeholder="Modell" value={filters.modell} onChange={(e) => set("modell", e.target.value)} />
       <select className={sel} value={filters.getriebe} onChange={(e) => set("getriebe", e.target.value)}>
         <option value="">Getriebe: todos</option>
         <option>Automatik</option>
@@ -43,16 +54,17 @@ function Filters({ filters, setFilters, count }) {
         <option value="">Estado: todos</option>
         {STATUSES.map((s) => <option key={s}>{s}</option>)}
       </select>
-      <label className="flex items-center gap-2 text-sm text-slate-400">
+      <label className="col-span-2 flex items-center gap-2 py-1 text-sm text-slate-400 md:col-auto">
         <input type="checkbox" checked={filters.inaktiv_anzeigen} onChange={(e) => set("inaktiv_anzeigen", e.target.checked)} />
         Incluir vendidos
       </label>
       {dirty && (
-        <button onClick={() => setFilters(EMPTY_FILTERS)} className="text-sm text-sky-400">
+        <button onClick={() => setFilters(EMPTY_FILTERS)} className="hidden text-sm text-sky-400 md:inline">
           Limpiar
         </button>
       )}
-      <span className="ml-auto text-sm text-slate-500">{count} coches</span>
+      <span className="ml-auto hidden text-sm text-slate-500 md:inline">{count} coches</span>
+      </div>
     </div>
   );
 }
@@ -132,7 +144,7 @@ function SyncBanner({ sync, usuario }) {
     return (
       <p className="flex items-center justify-between rounded-lg bg-red-950 px-4 py-2 text-sm text-red-300">
         <span>Error en la sincronización: {sync.error}</span>
-        <button onClick={cerrar} aria-label="Cerrar" className="ml-3 text-red-400">✕</button>
+        <button onClick={cerrar} aria-label="Cerrar" className="-my-2 ml-3 p-2 text-red-400">✕</button>
       </p>
     );
   }
@@ -142,7 +154,7 @@ function SyncBanner({ sync, usuario }) {
       <div className="space-y-1">
         <p className="flex items-center justify-between rounded-lg bg-green-950 px-4 py-2 text-sm text-green-300">
           <span>Sincronización terminada: {sync.result.nuevos} nuevos, {sync.result.actualizados} actualizados, {sync.result.inactivos} inactivos.</span>
-          <button onClick={cerrar} aria-label="Cerrar" className="ml-3 text-green-400">✕</button>
+          <button onClick={cerrar} aria-label="Cerrar" className="-my-2 ml-3 p-2 text-green-400">✕</button>
         </p>
         {fehler.map((f) => (
           <p key={f} className="rounded-lg bg-amber-950 px-4 py-2 text-sm text-amber-300">
@@ -190,6 +202,8 @@ function LoteBanner({ lote, fin, onClose }) {
   );
 }
 
+const TABS = [["dashboard", "Dashboard", "🚗"], ["favoritos", "Favoritos", "★"], ["revisiones", "Revisiones", "📋"], ["settings", "Ajustes", "⚙️"]];
+
 export default function App({ user, onSalir }) {
   const [tab, setTab] = useState("dashboard");
   const [cars, setCars] = useState([]);
@@ -200,6 +214,7 @@ export default function App({ user, onSalir }) {
   const [lote, setLote] = useState({ running: false });
   const [loteFin, setLoteFin] = useState(false);
   const wasLote = useRef(false);
+  const [limite, setLimite] = useState(PAGINA);  // cuántas tarjetas se pintan
   const [seleccion, setSeleccion] = useState(() => new Set());  // ids marcados con la casilla
   const [porEliminar, setPorEliminar] = useState(null);  // coches pendientes de confirmar en la ventana
   const [eliminando, setEliminando] = useState(false);
@@ -337,45 +352,56 @@ export default function App({ user, onSalir }) {
     setTab("dashboard");
   };
 
-  const tabBtn = (id, label) => (
-    <button
-      onClick={() => { setSeleccion(new Set()); setCars([]); setRevisionAbierta(null); setTab(id); }}
-      className={`rounded-lg px-3 py-1.5 text-sm ${tab === id ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white"}`}
-    >
-      {label}
+  useEffect(() => setLimite(PAGINA), [filters, tab]);  // otra consulta: se vuelve a empezar por arriba
+
+  const enFormulario = tab === "revisiones" && revisionAbierta != null;  // checklist o informe: en móvil, pantalla completa
+
+  const irA = (id) => { setSeleccion(new Set()); setCars([]); setRevisionAbierta(null); setTab(id); window.scrollTo({ top: 0 }); };
+  const syncBtn = (clase) => (
+    <button onClick={() => runSync().catch((e) => alert(e.message))} disabled={sync.running} className={`rounded-lg bg-sky-600 text-sm disabled:opacity-50 ${clase}`}>
+      {sync.running ? "Sincronizando…" : "Sincronizar"}
     </button>
   );
 
   return (
-    <main className="mx-auto max-w-4xl space-y-4 p-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold">Autos Alemanes · Costa del Sol</h1>
+    <main className="mx-auto max-w-4xl space-y-4 p-4 pb-24 md:p-6 md:pb-6">
+      <header className={`items-start justify-between gap-3 md:flex md:items-center ${enFormulario ? "hidden" : "flex"}`}>
+        <div className="min-w-0">
+          <h1 className="text-lg font-bold md:text-xl">Autos Alemanes · Costa del Sol</h1>
           <LastSync sync={sync} now={now} />
           <p className="text-xs text-slate-500">
-            {user.usuario} · <button onClick={onSalir} className="text-sky-400 hover:underline">Salir</button>
+            {user.usuario} · <button onClick={onSalir} className="px-1 py-2 text-sky-400 hover:underline md:py-1">Salir</button>
           </p>
         </div>
-        <nav className="flex flex-wrap items-center gap-2">
-          {tabBtn("dashboard", "Dashboard")}
-          {tabBtn("favoritos", "★ Favoritos")}
-          {tabBtn("revisiones", "Revisiones")}
-          {tabBtn("settings", "Ajustes")}
-          <button
-            onClick={() => runSync().catch((e) => alert(e.message))}
-            disabled={sync.running}
-            className="ml-2 rounded-lg bg-sky-600 px-4 py-2 text-sm disabled:opacity-50"
-          >
-            {sync.running ? "Sincronizando…" : "Sincronizar"}
-          </button>
+        {/* Escritorio: pestañas arriba. Móvil: botón de sincronizar aquí y pestañas en la barra inferior. */}
+        <nav className="hidden shrink-0 items-center gap-2 md:flex">
+          {TABS.map(([id, label, icono]) => (
+            <button key={id} onClick={() => irA(id)} className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${tab === id ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white"}`}>
+              {id === "favoritos" ? `${icono} ${label}` : label}
+            </button>
+          ))}
+          {syncBtn("ml-2 px-4 py-2")}
         </nav>
+        {syncBtn("shrink-0 px-3 py-2.5 md:hidden")}
       </header>
 
-      <SyncBanner sync={sync} usuario={user.usuario} />
-      <LoteBanner lote={lote} fin={loteFin} onClose={() => setLoteFin(false)} />
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-slate-800 bg-slate-950/95 backdrop-blur md:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+        {TABS.map(([id, label, icono]) => (
+          <button key={id} onClick={() => irA(id)} aria-current={tab === id ? "page" : undefined}
+            className={`flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-[11px] ${tab === id ? "text-sky-400" : "text-slate-400"}`}>
+            <span className="text-lg leading-none">{icono}</span>
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      <div className={`space-y-4 empty:hidden md:block ${enFormulario ? "hidden" : ""}`}>
+        <SyncBanner sync={sync} usuario={user.usuario} />
+        <LoteBanner lote={lote} fin={loteFin} onClose={() => setLoteFin(false)} />
+      </div>
       {porEliminar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-xl bg-slate-900 p-6 ring-1 ring-slate-700">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 md:items-center" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-xl bg-slate-900 p-5 ring-1 ring-slate-700 md:p-6">
             <h2 className="text-lg font-semibold">¿Está seguro de eliminar {porEliminar.length === 1 ? "este auto" : "estos autos"}?</h2>
             <ul className="mt-3 max-h-48 space-y-1 overflow-y-auto text-sm text-slate-300">
               {porEliminar.map((c) => (
@@ -389,10 +415,10 @@ export default function App({ user, onSalir }) {
             )}
             <p className="mt-3 text-xs text-slate-500">Desaparecerán de la lista y no volverán a aparecer en las próximas actualizaciones.</p>
             <div className="mt-5 flex justify-end gap-3">
-              <button onClick={() => setPorEliminar(null)} disabled={eliminando} className="rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">
+              <button onClick={() => setPorEliminar(null)} disabled={eliminando} className="rounded-lg px-4 py-2.5 text-sm text-slate-300 hover:text-white">
                 Cancelar
               </button>
-              <button onClick={confirmarEliminar} disabled={eliminando} className="rounded-lg bg-red-600 px-4 py-2 text-sm hover:bg-red-500 disabled:opacity-50">
+              <button onClick={confirmarEliminar} disabled={eliminando} className="rounded-lg bg-red-600 px-4 py-2.5 text-sm hover:bg-red-500 disabled:opacity-50">
                 {eliminando ? "Eliminando…" : "Aceptar"}
               </button>
             </div>
@@ -416,31 +442,31 @@ export default function App({ user, onSalir }) {
               onClick={runTop}
               disabled={lote.running || pendientes === 0}
               title={`Calcula margen e informe de IA de los ${TOP_N} primeros de la lista que aún no lo tienen al día`}
-              className="rounded-lg bg-violet-700 px-4 py-1.5 text-sm hover:bg-violet-600 disabled:opacity-50"
+              className="rounded-lg bg-violet-700 px-4 py-2.5 text-sm hover:bg-violet-600 disabled:opacity-50 md:py-1.5"
             >
               {lote.running ? "Analizando…" : pendientes === 0 ? `Top ${TOP_N} al día` : `Analizar Top ${TOP_N}`}
             </button>
             {!lote.running && pendientes > 0 && <span className="text-xs text-slate-500">{pendientes} por analizar</span>}
           </div>}
-          <div className="flex items-center gap-3 text-sm">
-            <label className="flex items-center gap-2 text-slate-400">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <label className="flex items-center gap-2 py-1 text-slate-400">
               <input
                 type="checkbox"
                 className="accent-red-500"
                 checked={cars.length > 0 && cars.every((c) => seleccion.has(c.id))}
                 onChange={(e) => setSeleccion(e.target.checked ? new Set(cars.map((c) => c.id)) : new Set())}
               />
-              Seleccionar todos
+              Seleccionar todos ({cars.length})
             </label>
             {seleccion.size > 0 && (
               <>
                 <span className="text-slate-400">{seleccion.size} seleccionados</span>
-                <button onClick={() => marcarFavoritos(!enFavoritos)} className="rounded-lg bg-amber-700 px-3 py-1 hover:bg-amber-600">
+                <button onClick={() => marcarFavoritos(!enFavoritos)} className="rounded-lg bg-amber-700 px-3 py-2 hover:bg-amber-600 md:py-1">
                   {enFavoritos ? "Quitar de favoritos" : "★ Añadir a favoritos"}
                 </button>
                 <button
                   onClick={() => setPorEliminar(cars.filter((c) => seleccion.has(c.id)))}
-                  className="rounded-lg bg-red-700 px-3 py-1 hover:bg-red-600"
+                  className="rounded-lg bg-red-700 px-3 py-2 hover:bg-red-600 md:py-1"
                 >
                   Eliminar seleccionados
                 </button>
@@ -452,9 +478,14 @@ export default function App({ user, onSalir }) {
               {enFavoritos ? "Aún no tienes favoritos. Márcalos con «☆ Favorito» en la lista." : "Sin resultados. Ajusta los filtros o pulsa Sincronizar."}
             </p>
           )}
-          {visibles.map((c) => (
+          {visibles.slice(0, limite).map((c) => (
             <CarCard key={c.id} car={c} onChange={onCarChange} selected={seleccion.has(c.id)} onSelect={toggleSel} onDelete={setPorEliminar} enFavoritos={enFavoritos} revision={revisiones[c.id]} onRevision={abrirRevision} />
           ))}
+          {visibles.length > limite && (
+            <button onClick={() => setLimite((n) => n + PAGINA)} className="w-full rounded-xl bg-slate-900 py-3 text-sm text-sky-400 ring-1 ring-slate-700">
+              Mostrar más ({visibles.length - limite} restantes)
+            </button>
+          )}
         </>
       ) : (
         <Settings onSaved={load} onRun={runSync} syncRunning={sync.running} />

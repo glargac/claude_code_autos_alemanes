@@ -62,7 +62,7 @@ export function RentabilidadButton({ car, onChange, onFinished }) {
     <button
       onClick={lanzar}
       disabled={calculando}
-      className="rounded-md bg-sky-900/60 px-2.5 py-1 text-sky-200 ring-1 ring-sky-800 hover:bg-sky-800/60 disabled:opacity-60"
+      className="rounded-lg bg-sky-900/60 px-3 py-2 text-sky-200 md:rounded-md md:px-2.5 md:py-1 ring-1 ring-sky-800 hover:bg-sky-800/60 disabled:opacity-60"
       title="Compara con precios reales en España (AutoScout24.es), calcula el margen con tus costes y pide un informe a la IA. Tarda 20-40 s."
     >
       {calculando ? "Analizando… (20-40 s)" : r?.estado === "listo" ? "Actualizar análisis" : "Analizar rentabilidad"}

@@ -85,8 +85,8 @@ export default function InformeTecnico({ det, onChange, onBack, onEditar }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <button onClick={onBack} className="rounded-lg px-3 py-1 text-slate-300 ring-1 ring-white/15">← Volver</button>
-        <button onClick={onEditar} className="text-sm text-blue-300">Editar checklist</button>
+        <button onClick={onBack} className="rounded-lg px-3 py-2 text-slate-300 ring-1 ring-white/15">← Volver</button>
+        <button onClick={onEditar} className="px-1 py-2 text-sm text-blue-300">Editar checklist</button>
       </div>
 
       <section className="overflow-hidden rounded-2xl bg-navy-900 ring-1 ring-white/10">

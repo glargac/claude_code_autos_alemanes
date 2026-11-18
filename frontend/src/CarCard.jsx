@@ -34,6 +34,9 @@ const DETAIL_LABELS = {
   getriebe: "Cambio",
 };
 
+// Acciones de la tarjeta: botones con área táctil cómoda en móvil, enlaces de texto en escritorio.
+const ACT = "rounded-lg bg-slate-800/70 px-3 py-2.5 md:bg-transparent md:p-0";
+
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) : null);
 const toLocalInput = (iso) => (iso ? iso.slice(0, 16) : "");
 
@@ -70,7 +73,7 @@ function Crm({ car, onChange }) {
             key={s}
             disabled={busy}
             onClick={() => applyStatus(s)}
-            className={`rounded-full px-3 py-1 text-xs ring-1 ${
+            className={`rounded-full px-3 py-2 text-xs ring-1 md:py-1 ${
               status === s ? `${STATUS_STYLE[s]} ring-transparent` : "text-slate-400 ring-slate-700 hover:text-white"
             }`}
           >
@@ -86,12 +89,12 @@ function Crm({ car, onChange }) {
             type="datetime-local"
             value={termin}
             onChange={(e) => setTermin(e.target.value)}
-            className="rounded-lg bg-slate-950 px-3 py-1.5 text-sm ring-1 ring-slate-700"
+            className="w-full rounded-lg bg-slate-950 px-3 py-2 text-sm ring-1 ring-slate-700 md:w-auto md:py-1.5"
           />
           <button
             disabled={busy || !termin}
             onClick={() => save({ status, termin_am: termin }, "Cita guardada")}
-            className="rounded-lg bg-violet-700 px-3 py-1.5 text-sm hover:bg-violet-600 disabled:opacity-50"
+            className="rounded-lg bg-violet-700 px-3 py-2 text-sm hover:bg-violet-600 disabled:opacity-50 md:py-1.5"
           >
             Guardar cita
           </button>
@@ -110,7 +113,7 @@ function Crm({ car, onChange }) {
           <button
             disabled={busy || notes === car.notizen}
             onClick={() => save({ notizen: notes }, "Notas guardadas")}
-            className="rounded-lg bg-slate-700 px-3 py-1.5 text-sm hover:bg-slate-600 disabled:opacity-40"
+            className="rounded-lg bg-slate-700 px-3 py-2 text-sm hover:bg-slate-600 disabled:opacity-40 md:py-1.5"
           >
             Guardar notas
           </button>
@@ -131,19 +134,27 @@ export default function CarCard({ car, onChange, selected, onSelect, onDelete, e
         ? "ring-2 ring-red-500 opacity-70"
         : "ring-1 ring-slate-800";
   const published = fmtDate(car.veroeffentlicht_am);
+  const img = !!car.image_url;
 
+  // Móvil: foto arriba a todo el ancho y debajo [casilla | datos | nota]. Escritorio: [casilla | foto | datos | nota].
   return (
-    <article className={`rounded-xl bg-slate-900 p-4 ${ring} ${selected ? "outline outline-2 outline-red-500" : ""}`}>
-      <div className="flex gap-4">
-        <input
-          type="checkbox"
-          checked={!!selected}
-          onChange={() => onSelect(car.id)}
-          aria-label="Seleccionar para eliminar"
-          className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-red-500"
-        />
-        {car.image_url && <img src={car.image_url} alt="" className="h-28 w-40 shrink-0 rounded-lg object-cover" />}
-        <div className="min-w-0 flex-1">
+    <article className={`rounded-xl bg-slate-900 p-3 md:p-4 ${ring} ${selected ? "outline outline-2 outline-red-500" : ""}`}>
+      <div className={`grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 md:gap-x-4 ${img ? "md:grid-cols-[auto_10rem_minmax(0,1fr)_auto]" : "md:grid-cols-[auto_minmax(0,1fr)_auto]"}`}>
+        {img && (
+          <img src={car.image_url} alt="" loading="lazy"
+            className="col-span-3 row-start-1 mb-3 h-44 w-full rounded-lg object-cover md:col-span-1 md:col-start-2 md:row-span-2 md:mb-0 md:h-28 md:w-40 md:self-start"
+            onError={(e) => { e.currentTarget.style.display = "none"; }} />
+        )}
+        <label className="col-start-1 row-start-2 -m-2.5 flex cursor-pointer items-start p-2.5 md:row-span-2 md:row-start-1 md:m-0 md:p-0">
+          <input
+            type="checkbox"
+            checked={!!selected}
+            onChange={() => onSelect(car.id)}
+            aria-label="Seleccionar para eliminar"
+            className="h-5 w-5 shrink-0 cursor-pointer accent-red-500 md:mt-1 md:h-4 md:w-4"
+          />
+        </label>
+        <div className={`col-start-2 row-start-2 min-w-0 md:row-start-1 ${img ? "md:col-start-3" : ""}`}>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-semibold">
               {car.marke} {car.modell}
@@ -169,12 +180,13 @@ export default function CarCard({ car, onChange, selected, onSelect, onDelete, e
             {car.getriebe && ` · ${car.getriebe}`}
             {published && ` · publicado ${published}`}
           </p>
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-            <a href={car.url} target="_blank" rel="noreferrer" className="text-sky-400">
+        </div>
+        <div className={`col-span-3 row-start-3 mt-3 flex flex-wrap items-center gap-2 text-sm md:col-span-1 md:row-start-2 md:mt-2 md:gap-x-4 ${img ? "md:col-start-3" : "md:col-start-2"}`}>
+            <a href={car.url} target="_blank" rel="noreferrer" className={`${ACT} text-sky-400`}>
               Ver en {SOURCE_LABEL[car.source] ?? car.source} ↗
             </a>
             {(car.otros_enlaces ?? []).map((o) => (
-              <a key={o.url} href={o.url} target="_blank" rel="noreferrer" className="text-sky-400/80" title="Mismo coche en otro anuncio">
+              <a key={o.url} href={o.url} target="_blank" rel="noreferrer" className={`${ACT} text-sky-400/80`} title="Mismo coche en otro anuncio">
                 También en {SOURCE_LABEL[o.source] ?? o.source}
                 {o.preis != null && o.preis !== car.preis ? ` · ${o.preis.toLocaleString("de-DE")} €` : ""} ↗
               </a>
@@ -182,39 +194,38 @@ export default function CarCard({ car, onChange, selected, onSelect, onDelete, e
             <button
               onClick={() => api.updateCar(car.id, { favorito: !car.favorito }).then(onChange).catch((e) => alert(e.message))}
               title={car.favorito ? "Quitarlo de Favoritos" : "Añadirlo a Favoritos (ahí puedes hacerle seguimiento)"}
-              className={car.favorito ? "text-amber-400 hover:text-amber-300" : "text-slate-400 hover:text-amber-300"}
+              className={`${ACT} ${car.favorito ? "text-amber-400 hover:text-amber-300" : "text-slate-400 hover:text-amber-300"}`}
             >
               {car.favorito ? "★ Favorito" : "☆ Favorito"}
             </button>
             {enFavoritos && (
-              <button onClick={() => setOpen(!open)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setOpen(!open)} className={`${ACT} text-slate-400 hover:text-white`}>
                 {open ? "Cerrar seguimiento" : car.notizen ? "Seguimiento · con notas" : "Seguimiento"}
               </button>
             )}
             {enFavoritos && (
-              <button onClick={() => onRevision(car)} className="rounded-md bg-accent/20 px-2 py-0.5 text-blue-300 ring-1 ring-accent/40 hover:bg-accent/30">
+              <button onClick={() => onRevision(car)} className="rounded-lg bg-accent/20 px-3 py-2 text-blue-300 ring-1 ring-accent/40 hover:bg-accent/30 md:rounded-md md:px-2 md:py-0.5">
                 {revision ? `Ver revisión técnica · ${revision.progreso}%` : "Iniciar revisión técnica"}
               </button>
             )}
             {enFavoritos && revision && revision.progreso > 0 && (
-              <button onClick={() => onRevision(car, "informe")} className="text-blue-300 hover:text-blue-200">Ver informe técnico</button>
+              <button onClick={() => onRevision(car, "informe")} className={`${ACT} text-blue-300 hover:text-blue-200`}>Ver informe técnico</button>
             )}
             <button
               onClick={() => onDelete([car])}
               title="Quitarlo de tu lista para siempre (no volverá a aparecer en las próximas actualizaciones)"
-              className="text-slate-500 hover:text-red-400"
+              className={`${ACT} text-slate-500 hover:text-red-400`}
             >
               Eliminar
             </button>
             <RentabilidadButton car={car} onChange={onChange} onFinished={() => setInforme(true)} />
             {car.rentabilidad && car.rentabilidad.estado !== "calculando" && (
-              <button onClick={() => setInforme(!informe)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setInforme(!informe)} className={`${ACT} text-slate-400 hover:text-white`}>
                 {informe ? "Ocultar informe" : "Ver informe"}
               </button>
             )}
           </div>
-        </div>
-        <div className="shrink-0 text-center">
+        <div className={`col-start-3 row-start-2 shrink-0 text-center md:row-span-2 md:row-start-1 md:self-start ${img ? "md:col-start-4" : ""}`}>
           <div className={`h-12 w-12 rounded-full text-lg font-bold leading-[3rem] text-slate-950 ${SCORE_COLORS[car.farbe]}`}>
             {car.score ?? "–"}
           </div>

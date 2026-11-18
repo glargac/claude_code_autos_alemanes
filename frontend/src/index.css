@@ -10,3 +10,13 @@
   --color-bad: #ef4444;
   --color-accent: #2563eb;
 }
+
+/* Móvil */
+html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+body { padding-top: env(safe-area-inset-top); }
+button, summary, label, select { touch-action: manipulation; } /* sin el retardo ni el zoom del doble toque */
+@media (max-width: 767px) {
+  /* iOS hace zoom al enfocar un campo con menos de 16 px */
+  input, select, textarea { font-size: 16px !important; }
+  input[type="checkbox"], input[type="radio"] { width: 1.25rem; height: 1.25rem; }
+}

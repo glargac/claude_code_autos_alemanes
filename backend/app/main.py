@@ -5,6 +5,7 @@ from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
@@ -45,6 +46,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Autos Alemanes – Costa del Sol", lifespan=lifespan)
+# La lista de coches son ~3 MB de JSON: comprimida baja a una décima parte (importa con datos móviles).
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "tauri://localhost"],

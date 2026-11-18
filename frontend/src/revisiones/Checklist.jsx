@@ -169,9 +169,9 @@ export default function Checklist({ id, onBack, onInforme }) {
 
   return (
     <div className="space-y-3">
-      <div className="sticky top-0 z-10 -mx-6 space-y-2 bg-navy-950/95 px-6 py-3 backdrop-blur">
+      <div className="sticky top-0 z-10 -mx-4 space-y-2 bg-navy-950/95 px-4 py-3 backdrop-blur md:-mx-6 md:px-6">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="rounded-lg px-2 py-1 text-slate-300 ring-1 ring-white/15" aria-label="Volver">←</button>
+          <button onClick={onBack} className="rounded-lg px-3 py-2 text-slate-300 ring-1 ring-white/15" aria-label="Volver">←</button>
           <div className="min-w-0 flex-1">
             <h2 className="truncate font-semibold">{nombreCoche(c)}</h2>
             <p className="text-xs text-slate-400">{c?.erstzulassung} · {c?.kilometer?.toLocaleString("de-DE")} km</p>
@@ -190,7 +190,7 @@ export default function Checklist({ id, onBack, onInforme }) {
             <button
               key={k}
               onClick={() => setCat(k)}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-sm ring-1 ${k === actual.puntos[0].categoria ? "bg-accent text-white ring-accent" : "text-slate-300 ring-white/15"}`}
+              className={`shrink-0 rounded-full px-3 py-2 text-sm ring-1 ${k === actual.puntos[0].categoria ? "bg-accent text-white ring-accent" : "text-slate-300 ring-white/15"}`}
             >
               {porCat[k].nombre} <span className="tabular-nums opacity-75">{cuenta(porCat[k].puntos)}/{porCat[k].puntos.length}</span>
             </button>
