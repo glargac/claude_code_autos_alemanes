@@ -7,6 +7,7 @@
     python -m app.maintenance crear-usuario NOMBRE      # pide la contraseña; el primero hereda los datos de una sola persona
     python -m app.maintenance listar-usuarios
     python -m app.maintenance cambiar-password NOMBRE   # también cierra sus sesiones abiertas
+    python -m app.maintenance backup [--destino DIR] [--conservar N]   # copia consistente de la base y las fotos
     python -m app.maintenance probar-ia          # comprueba la clave y el modelo de IA con una petición mínima
     python -m app.maintenance gemini-models      # lista los modelos de Gemini que acepta tu clave
 
@@ -130,6 +131,43 @@ async def purge_damaged(dry_run: bool = False) -> dict:
         }
 
 
+def backup(destino: str | None = None, conservar: int = 14) -> dict:
+    """Copia de seguridad: la base (con la API de copia de SQLite, consistente aunque el backend esté escribiendo) y las
+    fotos de las revisiones, en `data/backups/`. Conserva las últimas `conservar` copias de cada tipo."""
+    import re
+    import sqlite3
+    import tarfile
+    from datetime import datetime
+    from pathlib import Path
+
+    from .config import env
+    from .services.inspections import media_dir
+
+    if not env.database_url.startswith("sqlite:///"):
+        raise SystemExit("La copia solo está pensada para SQLite.")
+    origen = Path(env.database_url.removeprefix("sqlite:///"))
+    carpeta = Path(destino) if destino else origen.parent / "backups"
+    carpeta.mkdir(parents=True, exist_ok=True)
+    sello = datetime.now().strftime("%Y%m%d-%H%M%S")
+    db_copia = carpeta / f"autos-{sello}.db"
+    src, dst = sqlite3.connect(origen), sqlite3.connect(db_copia)
+    with dst:
+        src.backup(dst)
+    src.close()
+    dst.close()
+    fotos = media_dir()
+    fotos_copia = carpeta / f"fotos-{sello}.tar.gz"
+    with tarfile.open(fotos_copia, "w:gz") as tar:
+        tar.add(fotos, arcname="inspections")
+    borradas = 0
+    for patron in (r"autos-\d{8}-\d{6}\.db", r"fotos-\d{8}-\d{6}\.tar\.gz"):
+        antiguas = sorted(f for f in carpeta.iterdir() if re.fullmatch(patron, f.name))[:-conservar] if conservar > 0 else []
+        for f in antiguas:
+            f.unlink()
+            borradas += 1
+    return {"base": str(db_copia), "fotos": str(fotos_copia), "kb_base": db_copia.stat().st_size // 1024, "borradas_antiguas": borradas}
+
+
 def usuarios_cmd(task: str, nombre: str | None) -> None:
     import getpass
 
@@ -165,7 +203,9 @@ def usuarios_cmd(task: str, nombre: str | None) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("task", choices=["purge-damaged", "verify-stale", "fix-models", "backfill-co2", "probar-ia", "gemini-models",
-                                         "crear-usuario", "listar-usuarios", "cambiar-password"])
+                                         "crear-usuario", "listar-usuarios", "cambiar-password", "backup"])
+    parser.add_argument("--destino", default=None, help="backup: carpeta de destino (por defecto data/backups)")
+    parser.add_argument("--conservar", type=int, default=14, help="backup: cuántas copias guardar de cada tipo")
     parser.add_argument("nombre", nargs="?", help="crear-usuario / cambiar-password: nombre de usuario")
     parser.add_argument("--horas", type=float, default=12, help="verify-stale: antigüedad mínima desde que se vio por última vez")
     parser.add_argument("--limite", type=int, default=None, help="backfill-co2: máximo de coches a consultar")
@@ -173,6 +213,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.task in ("crear-usuario", "listar-usuarios", "cambiar-password"):
         usuarios_cmd(args.task, args.nombre)
+    elif args.task == "backup":
+        print(backup(args.destino, args.conservar))
     elif args.task == "purge-damaged":
         print(asyncio.run(purge_damaged(args.dry_run)))
     elif args.task == "fix-models":

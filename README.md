@@ -1,6 +1,8 @@
 # Autos Alemanes · Costa del Sol
 
-App de escritorio local para buscar, puntuar y seguir vehículos alemanes (kleinanzeigen.de y AutoScout24) para reventa en la Costa del Sol.
+App para buscar, puntuar y seguir vehículos alemanes (kleinanzeigen.de y AutoScout24) para reventa en la Costa del Sol. Varios usuarios (login), uso desde el móvil como PWA y despliegue en un servidor: ver [deploy/README.md](deploy/README.md).
+
+Cuentas: `cd backend && .venv/bin/python -m app.maintenance crear-usuario NOMBRE` (no hay registro abierto).
 
 ## Estructura
 

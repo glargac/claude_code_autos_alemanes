@@ -24,7 +24,9 @@ def _salida(user: User) -> dict:
 
 
 def _ip(request: Request) -> str:
-    return request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "?")
+    # Detrás de un proxy, uvicorn (--proxy-headers) ya pone aquí la IP real; fiarse a mano de X-Forwarded-For permitiría
+    # saltarse el freno de contraseñas cambiando esa cabecera.
+    return request.client.host if request.client else "?"
 
 
 @router.post("/login")
@@ -37,9 +39,8 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
         auth.anotar_fallo(ip, nombre)
         raise HTTPException(401, "Usuario o contraseña incorrectos")
     auth.limpiar_fallos(ip, nombre)
-    https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
     response.set_cookie(auth.COOKIE, auth.abrir_sesion(db, user), max_age=auth.SESION_DIAS * 86400, httponly=True,
-                        samesite="lax", secure=https, path="/")
+                        samesite="lax", secure=request.url.scheme == "https", path="/")  # con --proxy-headers, el esquema real
     return _salida(user)
 
 

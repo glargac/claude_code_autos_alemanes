@@ -6,10 +6,16 @@ import Settings from "./Settings.jsx";
 
 // Decide qué se ve: login → (primera vez) bienvenida con las preferencias → la app.
 export default function Raiz() {
-  const [user, setUser] = useState(undefined); // undefined = comprobando la sesión; null = sin sesión
+  const [user, setUser] = useState(undefined); // undefined = comprobando la sesión; null = sin sesión; "sin_conexion"
+
+  const comprobar = () => {
+    setUser(undefined);
+    // Un fallo de red (TypeError) no es «sesión caducada»: no hay que enseñar el login a quien solo está sin cobertura.
+    api.me().then(setUser).catch((e) => setUser(e instanceof TypeError ? "sin_conexion" : null));
+  };
 
   useEffect(() => {
-    api.me().then(setUser).catch(() => setUser(null));
+    comprobar();
     const caducada = () => setUser(null);
     window.addEventListener("sesion-caducada", caducada);
     return () => window.removeEventListener("sesion-caducada", caducada);
@@ -21,6 +27,15 @@ export default function Raiz() {
   };
 
   if (user === undefined) return <p className="p-6 text-slate-400">Cargando…</p>;
+  if (user === "sin_conexion") {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 p-6 text-center">
+        <p className="text-lg font-semibold">Sin conexión</p>
+        <p className="text-sm text-slate-400">No se pudo contactar con el servidor. Comprueba tu conexión; tu sesión sigue abierta.</p>
+        <button onClick={comprobar} className="rounded-lg bg-sky-600 px-4 py-2.5 font-medium hover:bg-sky-500">Reintentar</button>
+      </main>
+    );
+  }
   if (user === null) return <Login onLogin={setUser} />;
   if (!user.configurado) return <Bienvenida user={user} onSalir={salir} onListo={() => setUser({ ...user, configurado: true })} />;
   return <App key={user.usuario} user={user} onSalir={salir} />;

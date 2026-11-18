@@ -1,0 +1,5 @@
+# {$DOMINIO} viene de .env (p. ej. autos.midominio.com): Caddy obtiene y renueva el certificado HTTPS solo.
+# El DNS de ese nombre tiene que apuntar ya a la IP del servidor, y los puertos 80 y 443 estar abiertos.
+{$DOMINIO} {
+	reverse_proxy app:8000
+}

@@ -1,9 +1,10 @@
 import logging
+import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +21,7 @@ from .services.settings_store import get_setting
 from .services.sync import apply_schedule, combustibles_deseados, rescore_all
 
 log = logging.getLogger("uvicorn.error")
+mimetypes.add_type("application/manifest+json", ".webmanifest")  # si no, algunos sistemas lo sirven como texto plano
 
 
 @asynccontextmanager
@@ -46,6 +48,24 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Autos Alemanes – Costa del Sol", lifespan=lifespan)
+
+# Las imágenes de los anuncios vienen de los CDN de kleinanzeigen y AutoScout24 (https); todo lo demás, del propio sitio.
+CSP = ("default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; "
+       "connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+
+
+@app.middleware("http")
+async def cabeceras_de_seguridad(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("Content-Security-Policy", CSP)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    if request.url.scheme == "https":  # solo si llegó por HTTPS: en http://localhost bloquearía el acceso sin cifrar
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    if request.url.path.startswith("/api/") and request.url.path != "/api/health":
+        response.headers.setdefault("Cache-Control", "no-store")  # datos privados: ni caché del navegador ni del service worker
+    return response
+
 # La lista de coches son ~3 MB de JSON: comprimida baja a una décima parte (importa con datos móviles).
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(

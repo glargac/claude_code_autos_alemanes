@@ -1,0 +1,37 @@
+# Servidor: la app (backend + interfaz) detrás de Caddy, que pone HTTPS con certificado automático.
+# Configuración en un archivo .env junto a este (plantilla: deploy/env.example). Guía: deploy/README.md
+services:
+  app:
+    build: .
+    init: true                 # recoge procesos huérfanos de Chromium
+    restart: unless-stopped
+    shm_size: "1gb"            # Chromium se cuelga con el /dev/shm de 64 MB por defecto
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite:///./data/autos.db
+      TZ: ${TZ:-Europe/Berlin}  # hora de la sync diaria programada
+    volumes:
+      - datos:/app/backend/data  # base de datos, fotos de las revisiones y copias de seguridad
+    expose:
+      - "8000"                 # solo lo ve Caddy: no se publica al exterior
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMINIO: ${DOMINIO:?define DOMINIO en .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # certificados: no borrar (Let's Encrypt limita las emisiones)
+      - caddy_config:/config
+
+volumes:
+  datos:
+  caddy_data:
+  caddy_config:
