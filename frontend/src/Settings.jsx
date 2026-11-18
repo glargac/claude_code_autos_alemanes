@@ -49,7 +49,42 @@ function Card({ title, hint, children }) {
   );
 }
 
-export default function Settings({ onSaved, onRun, syncRunning }) {
+function Cuenta() {
+  const [actual, setActual] = useState("");
+  const [nueva, setNueva] = useState("");
+  const [msg, setMsg] = useState(null);
+  const cambiar = async () => {
+    setMsg(null);
+    try {
+      await api.changePassword(actual, nueva);
+      setActual("");
+      setNueva("");
+      setMsg({ ok: true, text: "Contraseña cambiada. Se cerraron las demás sesiones." });
+    } catch (e) {
+      setMsg({ ok: false, text: e.message });
+    }
+  };
+  return (
+    <Card title="Cuenta" hint="Cambiar tu contraseña (mínimo 8 caracteres).">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Contraseña actual">
+          <input type="password" autoComplete="current-password" className={input} value={actual} onChange={(e) => setActual(e.target.value)} />
+        </Field>
+        <Field label="Contraseña nueva">
+          <input type="password" autoComplete="new-password" className={input} value={nueva} onChange={(e) => setNueva(e.target.value)} />
+        </Field>
+      </div>
+      <div className="flex items-center gap-3">
+        <button onClick={cambiar} disabled={!actual || nueva.length < 8} className="rounded-lg bg-slate-700 px-4 py-2 text-sm hover:bg-slate-600 disabled:opacity-50">
+          Cambiar contraseña
+        </button>
+        {msg && <span className={`text-sm ${msg.ok ? "text-green-400" : "text-red-400"}`}>{msg.text}</span>}
+      </div>
+    </Card>
+  );
+}
+
+export default function Settings({ onSaved, onRun, syncRunning, onboarding = false }) {
   const [search, setSearch] = useState(null);
   const [weights, setWeights] = useState(null);
   const [app, setApp] = useState(null);
@@ -294,12 +329,16 @@ export default function Settings({ onSaved, onRun, syncRunning }) {
         <p className="text-xs text-slate-500">En un Mac que se duerme, la sync programada no se ejecuta; por eso viene desactivada.</p>
       </Card>
 
+      {!onboarding && <Cuenta />}
+
       <div className="flex flex-wrap items-center gap-3">
-        <button onClick={() => save(false)} disabled={busy} className="rounded-lg bg-slate-700 px-4 py-2 text-sm hover:bg-slate-600 disabled:opacity-50">
-          Guardar
-        </button>
+        {!onboarding && (
+          <button onClick={() => save(false)} disabled={busy} className="rounded-lg bg-slate-700 px-4 py-2 text-sm hover:bg-slate-600 disabled:opacity-50">
+            Guardar
+          </button>
+        )}
         <button onClick={() => save(true)} disabled={busy || syncRunning} className="rounded-lg bg-sky-600 px-4 py-2 text-sm hover:bg-sky-500 disabled:opacity-50">
-          {syncRunning ? "Sincronización en curso…" : "Guardar y Ejecutar"}
+          {syncRunning ? "Sincronización en curso…" : onboarding ? "Aceptar y empezar la sincronización" : "Guardar y Ejecutar"}
         </button>
         {msg && <span className={`text-sm ${msg.ok ? "text-green-400" : "text-red-400"}`}>{msg.text}</span>}
       </div>

@@ -1,16 +1,22 @@
 from datetime import datetime
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Car, Inspection, InspectionItem, InspectionMedia
+from ..models import Car, Inspection, InspectionItem, InspectionMedia, User
 from ..schemas import InspeccionIn, InspeccionUpdate, PuntoUpdate
 from ..services import checklist, inspection_report, inspections as svc
+from ..services.auth import current_user
 
-router = APIRouter(prefix="/api/inspections", tags=["inspections"])
+# Las revisiones son COMPARTIDAS: cualquier usuario ve y edita las de todos (guardan quién la inició).
+router = APIRouter(prefix="/api/inspections", tags=["inspections"], dependencies=[Depends(current_user)])
+media_router = APIRouter(prefix="/api/media/inspections", tags=["inspections"], dependencies=[Depends(current_user)])
 MAX_FOTOS_POR_SUBIDA = 10
 
 
@@ -35,6 +41,7 @@ def get_checklist():
 def listar(db: Session = Depends(get_db)):
     """Todas las revisiones con su coche y resumen, más las más recientes primero, y los KPIs del inicio."""
     todas = db.scalars(select(Inspection).order_by(Inspection.actualizado_en.desc())).all()
+    autores = dict(db.execute(select(User.id, User.username)).all())
     items_por: dict[int, list[InspectionItem]] = {}
     for i in db.scalars(select(InspectionItem).where(InspectionItem.estado.is_not(None))):
         items_por.setdefault(i.inspection_id, []).append(i)
@@ -42,6 +49,7 @@ def listar(db: Session = Depends(get_db)):
     for insp in todas:
         r = svc.resumen(items_por.get(insp.id, []))
         filas.append({"id": insp.id, "car_id": insp.car_id, "estado": insp.estado, "cliente": insp.cliente, "vin": insp.vin,
+                      "creado_por": autores.get(insp.usuario_id),
                       "creado_en": insp.creado_en, "actualizado_en": insp.actualizado_en, "finalizada_en": insp.finalizada_en,
                       "coche": svc._coche(db.get(Car, insp.car_id)),
                       "resumen": {k: v for k, v in r.items() if k != "categorias"}})
@@ -60,12 +68,12 @@ def listar(db: Session = Depends(get_db)):
 
 
 @router.post("", status_code=201)
-def crear(body: InspeccionIn, db: Session = Depends(get_db)):
+def crear(body: InspeccionIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Inicia la revisión de un coche, o devuelve la que ya tiene (una por coche)."""
     car = db.get(Car, body.car_id)
     if not car:
         raise HTTPException(404, "Auto no encontrado")
-    return svc.detalle(db, svc.crear_o_recuperar(db, car, body.cliente))
+    return svc.detalle(db, svc.crear_o_recuperar(db, car, body.cliente, user.id))
 
 
 @router.get("/{insp_id}")
@@ -180,3 +188,15 @@ async def generar_informe_ia(insp_id: int, db: Session = Depends(get_db)):
     insp.informe_ia = informe
     db.commit()
     return svc.detalle(db, insp)
+
+
+_ARCHIVO = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+@media_router.get("/{insp_id}/{archivo}")
+def foto(insp_id: int, archivo: str):
+    """Fotos de las revisiones: solo con sesión iniciada (antes eran archivos estáticos abiertos)."""
+    ruta = svc.media_dir() / str(insp_id) / archivo
+    if not _ARCHIVO.match(archivo) or not ruta.is_file():
+        raise HTTPException(404, "Foto no encontrada")
+    return FileResponse(ruta, headers={"Cache-Control": "private, max-age=86400"})

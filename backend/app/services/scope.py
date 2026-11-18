@@ -8,7 +8,7 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Car
+from ..models import Car, UserCar
 
 # Modelos de furgoneta (palabras completas del modelo o del título; "Touran" o "Sharan" son monovolúmenes, no entran).
 VAN_WORDS = {"sprinter", "crafter", "transporter", "vito", "citan", "caddy", "viano", "multivan", "california", "caravelle"}
@@ -42,6 +42,8 @@ def purge_out_of_scope(db: Session, wanted_fuels: set[str]) -> int:
     removed = 0
     for car in db.scalars(select(Car)).all():
         if out_of_scope(car, wanted_fuels) and not has_followup(car):
+            for uc in db.scalars(select(UserCar).where(UserCar.car_id == car.id)):
+                db.delete(uc)
             db.delete(car)
             removed += 1
     db.commit()

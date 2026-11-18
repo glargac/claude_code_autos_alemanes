@@ -45,6 +45,8 @@ class Car(Base):
     beschreibung: Mapped[str] = mapped_column(Text, default="")
     veroeffentlicht_am: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # score, score_detail, oculto y rentabilidad eran de una sola persona: ahora viven en `UserCar` (estas columnas
+    # solo se leen para pasárselas al primer usuario).
     score: Mapped[float | None] = mapped_column(Float)
     score_detail: Mapped[dict | None] = mapped_column(JSON)
     llm_analyse: Mapped[str | None] = mapped_column(Text)
@@ -66,8 +68,58 @@ class Car(Base):
     zuletzt_gesehen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class User(Base):
+    """Usuario de la app. Los ajustes, la sync, los scores y los análisis son suyos (`UserSetting`, `UserCar`);
+    los favoritos con su seguimiento y las revisiones técnicas son compartidos (viven en `Car` e `Inspection`)."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(200))
+    configurado: Mapped[bool] = mapped_column(default=False)  # ya eligió sus preferencias y lanzó su primera sync
+    creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class UserSession(Base):
+    """Sesión iniciada: en la base solo se guarda el hash del token (el token va en la cookie)."""
+
+    __tablename__ = "user_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expira_en: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class UserSetting(Base):
+    """Ajustes de cada usuario (clave/valor JSON): search, weights, app, rentabilidad y sync_meta."""
+
+    __tablename__ = "user_settings"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON)
+
+
+class UserCar(Base):
+    """Lo que es de cada usuario sobre un coche: su puntuación (sus pesos), si lo eliminó de SU lista y su análisis de
+    rentabilidad (depende de sus costes). El coche en sí (`Car`) es único y compartido."""
+
+    __tablename__ = "user_cars"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    car_id: Mapped[int] = mapped_column(ForeignKey("cars.id"), primary_key=True, index=True)
+    # score, score_detail, oculto y rentabilidad eran de una sola persona: ahora viven en `UserCar` (estas columnas
+    # solo se leen para pasárselas al primer usuario).
+    score: Mapped[float | None] = mapped_column(Float)
+    score_detail: Mapped[dict | None] = mapped_column(JSON)
+    oculto: Mapped[bool] = mapped_column(default=False)
+    rentabilidad: Mapped[dict | None] = mapped_column(JSON)
+
+
 class Setting(Base):
-    """Clave/valor JSON: 'search' (filtros) y 'weights' (pesos del scoring)."""
+    """Antiguos ajustes globales (una sola persona). Solo se leen para pasárselos al primer usuario que se cree."""
 
     __tablename__ = "settings"
 
@@ -95,6 +147,7 @@ class Inspection(Base):
     car_id: Mapped[int] = mapped_column(ForeignKey("cars.id"), unique=True, index=True)
     estado: Mapped[str] = mapped_column(String(20), default="en_curso", index=True)  # en_curso | en_qc | finalizada
     cliente: Mapped[str] = mapped_column(String(120), default="")
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # quién la inició (la revisión es compartida)
     vin: Mapped[str] = mapped_column(String(32), default="")
     informe_ia: Mapped[dict | None] = mapped_column(JSON)  # se genera bajo demanda (botón «Generar análisis IA»)
     creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

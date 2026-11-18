@@ -18,7 +18,7 @@ from playwright.async_api import Error as PlaywrightError
 from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
-from ..models import Car, MercadoCache
+from ..models import Car, MercadoCache, UserCar
 from . import llm
 from ..scrapers.kleinanzeigen import motivo_retirada
 from .mercado_es import MercadoES, _norm
@@ -211,23 +211,25 @@ def _mensaje_error(exc: Exception) -> str:
     return f"Error inesperado al analizar ({type(exc).__name__}). Revisa el registro del backend."
 
 
-def _guardar(db: Session, car: Car, datos: dict) -> None:
-    car.rentabilidad = datos  # se reasigna entero: SQLAlchemy no detecta cambios dentro de un JSON
+def _guardar(db: Session, uc: UserCar, datos: dict) -> None:
+    uc.rentabilidad = datos  # se reasigna entero: SQLAlchemy no detecta cambios dentro de un JSON
     db.commit()
 
 
-async def _analizar(car_id: int) -> None:
+async def _analizar(car_id: int, user_id: int) -> None:
+    """El informe es de cada usuario (sus costes y su perfil); el mercado en España y el coche se comparten."""
     with SessionLocal() as db:
         car = db.get(Car, car_id)
-        if car is None:
+        uc = db.get(UserCar, (user_id, car_id))
+        if car is None or uc is None:
             return
         ahora = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         try:
-            ajustes = get_setting(db, "rentabilidad")
+            ajustes = get_setting(db, "rentabilidad", user_id)
             if car.source == "kleinanzeigen" and (motivo := await motivo_retirada(car.url)):
                 car.aktiv = False  # se retira de la lista (se guarda junto con el aviso)
                 raise AnuncioNoDisponible(
-                    f"Este anuncio ya no está disponible: está {_MOTIVOS[motivo]}. Se ha retirado de tu lista."
+                    f"Este anuncio ya no está disponible: está {_MOTIVOS[motivo]}. Se ha retirado de la lista."
                 )
             mercado, de_cache = await _mercado(db, car)
             conflicto = conflicto_modelo(car.marke, car.modell, car.titel)
@@ -241,7 +243,7 @@ async def _analizar(car_id: int) -> None:
                 informe, aviso_ia = await asyncio.to_thread(llm.analyze_report, prompt)
             else:
                 aviso_ia = llm.SIN_CLAVE
-            _guardar(db, car, {
+            _guardar(db, uc, {
                 "estado": "listo", "error": None, "calculado_el": ahora, "perfil": ajustes["perfil"],
                 "ajustes_hash": hash_ajustes(ajustes), "mercado": mercado, "mercado_de_cache": de_cache, "calculo": calculo,
                 "informe": informe, "aviso_ia": aviso_ia,
@@ -251,16 +253,16 @@ async def _analizar(car_id: int) -> None:
         except Exception as exc:  # se muestra en la tarjeta
             if not isinstance(exc, (LookupError, ValueError, RuntimeError, PlaywrightError, OSError, TimeoutError)):
                 log.exception("Fallo inesperado en el análisis de rentabilidad del coche %s", car_id)
-            _guardar(db, car, {"estado": "error", "error": _mensaje_error(exc), "calculado_el": ahora})
+            _guardar(db, uc, {"estado": "error", "error": _mensaje_error(exc), "calculado_el": ahora})
 
 
-def iniciar_analisis(db: Session, car: Car) -> bool:
+def iniciar_analisis(db: Session, car: Car, uc: UserCar) -> bool:
     """Lanza el análisis en segundo plano. False si ya hay uno en curso para ese coche."""
-    if (car.rentabilidad or {}).get("estado") == "calculando":
+    if (uc.rentabilidad or {}).get("estado") == "calculando":
         return False
-    _guardar(db, car, {"estado": "calculando", "error": None,
-                       "iniciado_el": datetime.utcnow().isoformat(timespec="seconds") + "Z"})
-    tarea = asyncio.create_task(_analizar(car.id))
+    _guardar(db, uc, {"estado": "calculando", "error": None,
+                      "iniciado_el": datetime.utcnow().isoformat(timespec="seconds") + "Z"})
+    tarea = asyncio.create_task(_analizar(car.id, uc.user_id))
     _tasks.add(tarea)
     tarea.add_done_callback(_tasks.discard)
     return True
@@ -268,48 +270,56 @@ def iniciar_analisis(db: Session, car: Car) -> bool:
 
 # ---------------------------------------------------------------- lote («Analizar el Top N»)
 
-lote: dict = {"running": False, "total": 0, "hechos": 0, "errores": 0, "omitidos": 0, "actual": None}
+_LOTE_INICIAL = {"running": False, "total": 0, "hechos": 0, "errores": 0, "omitidos": 0, "actual": None}
+lotes: dict[int, dict] = {}  # un lote por usuario, en memoria
 _SIN_MODELO = {"", "andere", "sonstige", "sonstiges", "other"}
+
+
+def lote_de(user_id: int) -> dict:
+    return lotes.setdefault(user_id, dict(_LOTE_INICIAL))
 
 
 def analizable(car: Car) -> bool:
     return bool(car.preis and car.erstzulassung and _norm(car.modell) not in _SIN_MODELO)
 
 
-def al_dia(car: Car, ajustes_hash: str) -> bool:
-    r = car.rentabilidad or {}
+def al_dia(uc: UserCar, ajustes_hash: str) -> bool:
+    r = uc.rentabilidad or {}
     return r.get("estado") == "listo" and r.get("ajustes_hash") == ajustes_hash
 
 
-async def _analizar_lote(ids: list[int]) -> None:
+async def _analizar_lote(ids: list[int], user_id: int) -> None:
+    lote = lote_de(user_id)
     try:
         for car_id in ids:
             lote["actual"] = car_id
-            await _analizar(car_id)
+            await _analizar(car_id, user_id)
             lote["hechos"] += 1
             with SessionLocal() as db:
-                car = db.get(Car, car_id)
-                if car is None or (car.rentabilidad or {}).get("estado") != "listo":
+                uc = db.get(UserCar, (user_id, car_id))
+                if uc is None or (uc.rentabilidad or {}).get("estado") != "listo":
                     lote["errores"] += 1
     finally:
         lote.update(running=False, actual=None)
 
 
-def iniciar_lote(db: Session, coches: list[Car]) -> dict:
+def iniciar_lote(db: Session, filas: list[tuple[Car, UserCar]], user_id: int) -> dict:
     """Analiza uno detrás de otro (no a la vez: se respeta el ritmo con AutoScout24.es y la cuota de la IA) los coches
     dados, saltando los que ya tienen informe al día o no se pueden analizar. Todos quedan «calculando» desde el inicio."""
+    lote = lote_de(user_id)
     if lote["running"]:
         return lote
-    h = hash_ajustes(get_setting(db, "rentabilidad"))
-    pendientes = [c for c in coches if analizable(c) and not al_dia(c, h) and (c.rentabilidad or {}).get("estado") != "calculando"]
+    h = hash_ajustes(get_setting(db, "rentabilidad", user_id))
+    pendientes = [(c, uc) for c, uc in filas
+                  if analizable(c) and not al_dia(uc, h) and (uc.rentabilidad or {}).get("estado") != "calculando"]
     lote.update(running=bool(pendientes), total=len(pendientes), hechos=0, errores=0, actual=None,
-                omitidos=len(coches) - len(pendientes))
+                omitidos=len(filas) - len(pendientes))
     if not pendientes:
         return lote
     ahora = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-    for c in pendientes:
-        _guardar(db, c, {"estado": "calculando", "error": None, "iniciado_el": ahora})
-    tarea = asyncio.create_task(_analizar_lote([c.id for c in pendientes]))
+    for _, uc in pendientes:
+        _guardar(db, uc, {"estado": "calculando", "error": None, "iniciado_el": ahora})
+    tarea = asyncio.create_task(_analizar_lote([c.id for c, _ in pendientes], user_id))
     _tasks.add(tarea)
     tarea.add_done_callback(_tasks.discard)
     return lote
@@ -318,9 +328,9 @@ def iniciar_lote(db: Session, coches: list[Car]) -> dict:
 def reiniciar_interrumpidos(db: Session) -> int:
     """Al arrancar: un análisis que figura "calculando" quedó cortado por un reinicio del backend."""
     n = 0
-    for car in db.query(Car).filter(Car.rentabilidad.isnot(None)):
-        if (car.rentabilidad or {}).get("estado") == "calculando":
-            car.rentabilidad = {"estado": "error", "error": "El análisis se interrumpió (el backend se reinició). Vuelve a lanzarlo."}
+    for uc in db.query(UserCar).filter(UserCar.rentabilidad.isnot(None)):
+        if (uc.rentabilidad or {}).get("estado") == "calculando":
+            uc.rentabilidad = {"estado": "error", "error": "El análisis se interrumpió (el backend se reinició). Vuelve a lanzarlo."}
             n += 1
     db.commit()
     return n

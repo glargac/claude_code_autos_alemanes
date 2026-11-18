@@ -90,18 +90,26 @@ function LastSync({ sync, now }) {
   );
 }
 
-const BANNER_VISTO = "syncBannerVisto";
+const BANNER_VISTO = "syncBannerVisto";  // + «:usuario»: cada usuario del navegador tiene el suyo
 
 // El resultado de la última sync (y sus avisos) se queda en memoria en el backend hasta la siguiente: sin esto se
 // mostraba en cada visita. Se enseña una vez (`started_at` identifica la sync), con ✕ para cerrarlo, y no vuelve.
-function SyncBanner({ sync }) {
-  const [cerrado, setCerrado] = useState(() => localStorage.getItem(BANNER_VISTO));
+function SyncBanner({ sync, usuario }) {
+  const clave = `${BANNER_VISTO}:${usuario}`;
+  const [cerrado, setCerrado] = useState(() => localStorage.getItem(clave));
   const terminada = !sync.running && sync.started_at && (sync.result || sync.error);
   useEffect(() => {
-    if (terminada) localStorage.setItem(BANNER_VISTO, sync.started_at);  // la próxima visita ya no lo muestra
-  }, [terminada, sync.started_at]);
+    if (terminada) localStorage.setItem(clave, sync.started_at);  // la próxima visita ya no lo muestra
+  }, [terminada, sync.started_at, clave]);
   if (terminada && cerrado === sync.started_at) return null;
   const cerrar = () => setCerrado(sync.started_at);
+  if (sync.running && sync.en_cola) {
+    return (
+      <p className="rounded-lg bg-sky-950 px-4 py-3 text-sm text-sky-200">
+        Otro usuario está sincronizando ahora. Tu sincronización empezará en cuanto termine (solo corre una a la vez).
+      </p>
+    );
+  }
   if (sync.running) {
     const p = sync.progress;
     const label = p
@@ -182,7 +190,7 @@ function LoteBanner({ lote, fin, onClose }) {
   );
 }
 
-export default function App() {
+export default function App({ user, onSalir }) {
   const [tab, setTab] = useState("dashboard");
   const [cars, setCars] = useState([]);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
@@ -344,6 +352,9 @@ export default function App() {
         <div>
           <h1 className="text-xl font-bold">Autos Alemanes · Costa del Sol</h1>
           <LastSync sync={sync} now={now} />
+          <p className="text-xs text-slate-500">
+            {user.usuario} · <button onClick={onSalir} className="text-sky-400 hover:underline">Salir</button>
+          </p>
         </div>
         <nav className="flex flex-wrap items-center gap-2">
           {tabBtn("dashboard", "Dashboard")}
@@ -360,7 +371,7 @@ export default function App() {
         </nav>
       </header>
 
-      <SyncBanner sync={sync} />
+      <SyncBanner sync={sync} usuario={user.usuario} />
       <LoteBanner lote={lote} fin={loteFin} onClose={() => setLoteFin(false)} />
       {porEliminar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true">

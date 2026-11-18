@@ -27,7 +27,8 @@ def get_db():
 # Columnas añadidas después de la primera versión: create_all no modifica tablas existentes.
 _ADDED_COLUMNS = {"cars": {"duplicado_de": "INTEGER", "rentabilidad": "TEXT", "modell_original": "VARCHAR(100)", "erstzulassung_monat": "INTEGER",
                           "oculto": "BOOLEAN DEFAULT 0", "co2_gkm": "INTEGER",
-                          "furgoneta": "BOOLEAN DEFAULT 0", "favorito": "BOOLEAN DEFAULT 0"}}  # JSON se guarda como texto
+                          "furgoneta": "BOOLEAN DEFAULT 0", "favorito": "BOOLEAN DEFAULT 0"},
+                   "inspections": {"usuario_id": "INTEGER"}}  # JSON se guarda como texto
 
 
 def ensure_columns() -> None:

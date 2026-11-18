@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import env
-from ..models import Car, Inspection, InspectionItem, InspectionMedia
+from ..models import Car, Inspection, InspectionItem, InspectionMedia, User
 from . import checklist, inspection_report, llm
 
 MEDIA_URL = "/api/media/inspections"
@@ -24,11 +24,11 @@ def media_dir() -> Path:
     return ruta
 
 
-def crear_o_recuperar(db: Session, car: Car, cliente: str = "") -> Inspection:
+def crear_o_recuperar(db: Session, car: Car, cliente: str = "", usuario_id: int | None = None) -> Inspection:
     """Una revisión por coche: si ya existe se devuelve (para reanudarla), no se duplica."""
     insp = db.scalar(select(Inspection).where(Inspection.car_id == car.id))
     if not insp:
-        insp = Inspection(car_id=car.id, cliente=cliente.strip())
+        insp = Inspection(car_id=car.id, cliente=cliente.strip(), usuario_id=usuario_id)
         db.add(insp)
         db.flush()
     asegurar_items(db, insp)
@@ -103,7 +103,9 @@ def detalle(db: Session, insp: Inspection) -> dict:
                        "fotos": [{"id": m.id, "url": _url(insp.id, m.archivo), "miniatura": _url(insp.id, _miniatura(m.archivo))}
                                  for m in fotos.get(i.id, [])]})
     car = db.get(Car, insp.car_id)
+    autor = db.get(User, insp.usuario_id) if insp.usuario_id else None
     return {"id": insp.id, "car_id": insp.car_id, "estado": insp.estado, "cliente": insp.cliente, "vin": insp.vin,
+            "creado_por": autor.username if autor else None,
             "creado_en": insp.creado_en, "actualizado_en": insp.actualizado_en, "finalizada_en": insp.finalizada_en,
             "informe_ia": _informe_ia(insp, puntos), "coche": _coche(car), "resumen": resumen(items), "puntos": puntos,
             "diagnostico_basico": inspection_report.diagnostico_basico(resumen(items), puntos), "ia": llm.info()}

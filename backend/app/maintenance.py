@@ -4,6 +4,9 @@
     python -m app.maintenance fix-models [--dry-run]   # corrige el modelo desde el título donde lo contradice
     python -m app.maintenance verify-stale [--dry-run] [--horas 12]
     python -m app.maintenance backfill-co2 [--dry-run] [--limite N]   # CO2 de los AutoScout24 ya guardados
+    python -m app.maintenance crear-usuario NOMBRE      # pide la contraseña; el primero hereda los datos de una sola persona
+    python -m app.maintenance listar-usuarios
+    python -m app.maintenance cambiar-password NOMBRE   # también cierra sus sesiones abiertas
     python -m app.maintenance probar-ia          # comprueba la clave y el modelo de IA con una petición mínima
     python -m app.maintenance gemini-models      # lista los modelos de Gemini que acepta tu clave
 
@@ -16,11 +19,12 @@ import asyncio
 from sqlalchemy import select
 
 from .database import SessionLocal, ensure_columns
-from .models import Car
+from .models import Car, User
 from .scrapers.kleinanzeigen import KleinanzeigenScraper
 from .services.dedupe import apply_duplicates
 from .services.scope import has_followup
 from .services.settings_store import get_setting
+from .config import DEFAULT_SEARCH
 from .services.sync import rescore_all
 
 
@@ -106,7 +110,8 @@ async def purge_damaged(dry_run: bool = False) -> dict:
     ensure_columns()
     with SessionLocal() as db:
         scraper = KleinanzeigenScraper()
-        damaged = await scraper.damaged_ids(get_setting(db, "search"))
+        primero = db.scalar(select(User.id).order_by(User.id))  # la búsqueda del primer usuario (o la de por defecto)
+        damaged = await scraper.damaged_ids(get_setting(db, "search", primero) if primero else DEFAULT_SEARCH)
         rows = db.scalars(select(Car).where(Car.source == "kleinanzeigen", Car.external_id.in_(damaged))).all()
         protected = [c for c in rows if has_followup(c)]
         to_delete = [c for c in rows if not has_followup(c)]
@@ -125,14 +130,50 @@ async def purge_damaged(dry_run: bool = False) -> dict:
         }
 
 
+def usuarios_cmd(task: str, nombre: str | None) -> None:
+    import getpass
+
+    from .database import Base, engine
+    from .services import auth
+
+    Base.metadata.create_all(engine)
+    ensure_columns()
+    with SessionLocal() as db:
+        if task == "listar-usuarios":
+            for u in db.scalars(select(User).order_by(User.id)):
+                print(f"{u.id:>3}  {u.username:<20} creado {u.creado_en:%Y-%m-%d}  {'configurado' if u.configurado else 'sin configurar'}")
+            return
+        if not nombre:
+            raise SystemExit("Indica el nombre de usuario.")
+        pw = getpass.getpass("Contraseña: ")
+        if pw != getpass.getpass("Repite la contraseña: "):
+            raise SystemExit("Las contraseñas no coinciden.")
+        try:
+            if task == "crear-usuario":
+                user = auth.crear_usuario(db, nombre, pw)
+                print(f"Usuario «{user.username}» creado" + (" (con los datos que ya había en la base)." if user.configurado else "."))
+            else:
+                user = db.scalar(select(User).where(User.username == auth.normalizar_usuario(nombre)))
+                if not user:
+                    raise SystemExit(f"No existe el usuario «{nombre}».")
+                auth.cambiar_password(db, user, pw)
+                print("Contraseña cambiada; las sesiones abiertas se han cerrado.")
+        except ValueError as e:
+            raise SystemExit(str(e))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("task", choices=["purge-damaged", "verify-stale", "fix-models", "backfill-co2", "probar-ia", "gemini-models"])
+    parser.add_argument("task", choices=["purge-damaged", "verify-stale", "fix-models", "backfill-co2", "probar-ia", "gemini-models",
+                                         "crear-usuario", "listar-usuarios", "cambiar-password"])
+    parser.add_argument("nombre", nargs="?", help="crear-usuario / cambiar-password: nombre de usuario")
     parser.add_argument("--horas", type=float, default=12, help="verify-stale: antigüedad mínima desde que se vio por última vez")
     parser.add_argument("--limite", type=int, default=None, help="backfill-co2: máximo de coches a consultar")
     parser.add_argument("--dry-run", action="store_true", help="solo cuenta, no borra")
     args = parser.parse_args()
-    if args.task == "purge-damaged":
+    if args.task in ("crear-usuario", "listar-usuarios", "cambiar-password"):
+        usuarios_cmd(args.task, args.nombre)
+    elif args.task == "purge-damaged":
         print(asyncio.run(purge_damaged(args.dry_run)))
     elif args.task == "fix-models":
         r = fix_models(args.dry_run)

@@ -10,15 +10,19 @@ if [ ! -x "$PY" ]; then echo "Falta el entorno virtual: cd backend && python3 -m
 
 cat <<TXT
 == Claude Code (una línea) ==
-claude mcp add autos-alemanes -- "$PY" "$SERVIDOR"
+claude mcp add autos-alemanes -e AUTOS_USUARIO=TU_USUARIO -e AUTOS_PASSWORD=TU_CONTRASEÑA -- "$PY" "$SERVIDOR"
 
 == Claude Desktop ==
 Añade esto a "mcpServers" en ~/Library/Application Support/Claude/claude_desktop_config.json y reinicia Claude Desktop:
 
     "autos-alemanes": {
       "command": "$PY",
-      "args": ["$SERVIDOR"]
+      "args": ["$SERVIDOR"],
+      "env": { "AUTOS_USUARIO": "TU_USUARIO", "AUTOS_PASSWORD": "TU_CONTRASEÑA" }
     }
+
+La app exige login: pon el usuario y la contraseña que creaste con "python -m app.maintenance crear-usuario".
+Si la app no está en este Mac, añade también AUTOS_API_URL con su dirección.
 
 El backend debe estar en marcha (scripts/abrir.command o el agente de launchd).
 TXT

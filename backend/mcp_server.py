@@ -2,7 +2,8 @@
 
 Es una capa fina sobre la API local de la app (el backend tiene que estar en marcha). No toca la base de datos ni
 guarda nada: cada herramienta llama a un endpoint de `/api`. Se lanza solo, por stdio, desde la configuración de
-Claude (ver README). Variable opcional: AUTOS_API_URL (por defecto http://127.0.0.1:8000).
+Claude (ver README). Variables: AUTOS_API_URL (por defecto http://127.0.0.1:8000), AUTOS_USUARIO y AUTOS_PASSWORD (la app exige
+login; las herramientas actúan como ese usuario: ven SU lista y SUS análisis).
 """
 import asyncio
 import os
@@ -12,13 +13,29 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 BASE = os.environ.get("AUTOS_API_URL", "http://127.0.0.1:8000").rstrip("/")
+USUARIO = os.environ.get("AUTOS_USUARIO", "")
+PASSWORD = os.environ.get("AUTOS_PASSWORD", "")
 mcp = MCPServer("autos-alemanes")
+_cookies = httpx.Cookies()  # la sesión se conserva entre llamadas; si caduca se vuelve a iniciar
+
+
+async def _login(c: httpx.AsyncClient) -> None:
+    if not (USUARIO and PASSWORD):
+        raise ToolError("La app pide usuario y contraseña: define AUTOS_USUARIO y AUTOS_PASSWORD en la configuración de este servidor MCP "
+                        "(scripts/config-mcp.sh).")
+    r = await c.post("/api/auth/login", json={"usuario": USUARIO, "password": PASSWORD})
+    if r.status_code != 200:
+        raise ToolError(f"No se pudo iniciar sesión en la app como «{USUARIO}»: {r.status_code} {r.json().get('detail', '')}")
+    _cookies.update(c.cookies)
 
 
 async def _api(method: str, path: str, **kw):
     try:
-        async with httpx.AsyncClient(base_url=BASE, timeout=30) as c:
+        async with httpx.AsyncClient(base_url=BASE, timeout=30, cookies=_cookies) as c:
             r = await c.request(method, f"/api{path}", **kw)
+            if r.status_code == 401:  # sesión ausente o caducada
+                await _login(c)
+                r = await c.request(method, f"/api{path}", **kw)
     except httpx.TransportError:
         raise ToolError(f"No se pudo conectar con la app en {BASE}. ¿Está en marcha el backend? (scripts/abrir.command)")
     if r.status_code >= 400:

@@ -1,8 +1,17 @@
+// Si la sesión caduca (o se cierra en otra pestaña), cualquier petición protegida responde 401: se avisa a la raíz
+// de la app para que enseñe el login. El propio login y la comprobación inicial (/auth/me) no cuentan.
+const SIN_AVISO_401 = ["/auth/login", "/auth/me"];
+
+function sesionCaducada(res, path) {
+  if (res.status === 401 && !SIN_AVISO_401.includes(path)) window.dispatchEvent(new Event("sesion-caducada"));
+}
+
 async function req(path, opts) {
   const res = await fetch(`/api${path}`, {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
+  sesionCaducada(res, path);
   if (!res.ok) {
     let msg = `${res.status}`;
     try {
@@ -15,6 +24,10 @@ async function req(path, opts) {
 }
 
 export const api = {
+  me: () => req("/auth/me"),
+  login: (usuario, password) => req("/auth/login", { method: "POST", body: JSON.stringify({ usuario, password }) }),
+  logout: () => req("/auth/logout", { method: "POST" }),
+  changePassword: (actual, nueva) => req("/auth/password", { method: "POST", body: JSON.stringify({ actual, nueva }) }),
   cars: (filters = {}) => {
     const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v !== "" && v != null));
     return req(`/cars?${qs}`);
@@ -39,6 +52,7 @@ export const api = {
     const fd = new FormData();
     files.forEach((f) => fd.append("files", f));
     return fetch(`/api/inspections/${id}/items/${codigo}/media`, { method: "POST", body: fd }).then(async (res) => {
+      sesionCaducada(res, "");
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `${res.status}`);
       return res.json();
     });
