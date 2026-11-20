@@ -18,8 +18,9 @@ WORKDIR /app/backend
 
 COPY backend/requirements.txt ./
 # tzdata: la sync programada y los nombres de las copias usan la hora de TZ (ver docker-compose.yml)
+# libatomic1: el driver de Node de Playwright no arranca sin ella (error 127) en la imagen slim
 RUN pip install --no-cache-dir -r requirements.txt \
- && apt-get update && apt-get install -y --no-install-recommends tzdata \
+ && apt-get update && apt-get install -y --no-install-recommends tzdata libatomic1 \
  && playwright install --with-deps chromium \
  && rm -rf /var/lib/apt/lists/*
 
